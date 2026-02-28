@@ -1,5 +1,6 @@
 import os
 import asyncio
+import time
 from fastapi import FastAPI
 from web3 import Web3
 from dotenv import load_dotenv
@@ -48,27 +49,34 @@ def send_emergency_alerts(owner_wallet: str, timestamp: int):
     # Example: requests.post("https://api.resend.com/emails", data={...})
 
 async def listen_for_events():
-    """Background task that polls the blockchain for new events."""
-    print("Starting blockchain listener on Polygon Amoy...")
-    
-    # Create a filter to look for new ProtocolInitiated events from the latest block
-    event_filter = contract.events.ProtocolInitiated.create_filter(fromBlock='latest')
-    
+    print("Starting blockchain listener (Polling Mode) on Polygon Amoy...")
+    last_checked_block = w3.eth.block_number
+
     while True:
         try:
-            # Check for new events
-            new_entries = event_filter.get_new_entries()
-            for event in new_entries:
-                owner = event['args']['owner']
-                timestamp = event['args']['timestamp']
-                send_emergency_alerts(owner, timestamp)
-                
-            # Wait 3 seconds before checking again (prevents rate-limiting)
-            await asyncio.sleep(3)
+            # Check for new blocks
+            current_block = w3.eth.block_number
             
+            if current_block > last_checked_block:
+                # Ask for logs specifically for your event
+                events = contract.events.ProtocolInitiated.get_logs(
+                    from_block=last_checked_block + 1,
+                    to_block=current_block
+                )
+
+                for event in events:
+                    user_wallet = event['args']['owner']
+                    print(f"🚨 EMERGENCY: Protocol Initiated for {user_wallet}")
+                    # This is where your AI/Email alert logic goes!
+                    
+                last_checked_block = current_block
+            
+            # Wait 5 seconds before checking again to avoid rate limits
+            await asyncio.sleep(5)
+
         except Exception as e:
             print(f"Listener error: {e}")
-            await asyncio.sleep(5) # Back off if there's a network glitch
+            await asyncio.sleep(10) # Wait longer if there's a network error
 
 # Start the listener when the FastAPI server starts
 @app.on_event("startup")
