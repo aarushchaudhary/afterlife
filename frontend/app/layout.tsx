@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const config = getDefaultConfig({
   appName: 'Afterlife Protocol',
-  projectId: 'YOUR_WALLETCONNECT_PROJECT_ID', // cloud.walletconnect.com
+  projectId: '0b8566217e81614528a3cb617d5ac842', // cloud.walletconnect.com
   chains: [polygonAmoy],
   ssr: true,
 });
