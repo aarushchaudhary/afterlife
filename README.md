@@ -66,9 +66,25 @@ The Oracle acts as the "Timekeeper" that monitors the blockchain for the `DeathI
 2. **Provider:** Use an **Alchemy** or **Infura** WSS/HTTP RPC URL.
 3. **Function:** The script listens for the Hospital's trigger and starts a 72-hour countdown. If the owner does not "Check-in" (cancel) during this window, the Oracle prepares the system for multi-sig unlocking.
 
-## 📄 Environment Variables (`.env.local`)
+## 📄 Environment Variables
 
-Create a file named `.env.local` in your root folder. This keeps your API keys secure and accessible to Wagmi and Supabase.
+You will need to set up environment variables for the different components of the protocol.
+
+### 1. Contracts (`contracts/.env`)
+
+Create a `.env` file in the `contracts` directory for deploying the smart contract.
+
+```env
+# Your EVM wallet private key for deployment
+export PRIVATE_KEY=your_private_key_here
+
+# Polygon Amoy RPC URL
+export AMOY_RPC_URL=https://rpc-amoy.polygon.technology
+```
+
+### 2. Frontend (`frontend/.env.local`)
+
+Create a `.env.local` file in the `frontend` directory. This keeps your API keys secure and accessible to Wagmi and Supabase.
 
 ```env
 # --- WALLETCONNECT CONFIG ---
@@ -87,6 +103,18 @@ NEXT_PUBLIC_CONTRACT_ADDRESS=0xF07b3D064c9aad3328975c4655CCC6e9cD746cc2
 # (Optional) Alchemy/Infura RPC URL for faster data fetching
 # While Wagmi provides default public RPCs, using a private one from Alchemy will prevent "Rate Limit" errors.
 NEXT_PUBLIC_AMOY_RPC_URL=https://polygon-amoy.g.alchemy.com/v2/your_alchemy_key
+```
+
+### 3. Python Oracle (`oracle/.env`)
+
+Create a `.env` file in the `oracle` directory.
+
+```env
+# Polygon Amoy RPC URL
+AMOY_RPC_URL=https://rpc-amoy.polygon.technology
+
+# The address of your deployed AfterlifeVault contract
+CONTRACT_ADDRESS=0xF07b3D064c9aad3328975c4655CCC6e9cD746cc2
 ```
 
 ## 🚰 Faucets: How to get Free Amoy POL
