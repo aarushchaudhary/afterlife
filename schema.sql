@@ -20,12 +20,20 @@ CREATE TABLE vault_secrets (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+CREATE TABLE verification_queue (
+    owner_wallet TEXT PRIMARY KEY,
+    beneficiary_wallet TEXT,
+    status TEXT DEFAULT 'active', -- 'active', 'initiated', 'unlocked'
+    initiated_at TIMESTAMP WITH TIME ZONE
+);
+
 -- ==========================================
 -- 3. TURN ON ROW LEVEL SECURITY (RLS)
 -- This physically prevents unauthorized data reads
 -- ==========================================
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vault_secrets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vault_secrets ADD COLUMN file_url TEXT;
 
 -- ==========================================
 -- 4. RLS POLICIES FOR 'ROLES'

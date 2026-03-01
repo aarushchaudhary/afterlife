@@ -1,136 +1,165 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useWriteContract, useAccount } from 'wagmi';
+import { useWriteContract, useReadContract, useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { parseGwei } from 'viem';
 import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
-import { parseGwei } from 'viem';
+import { User, Shield, Database, FileText, AlertOctagon, Activity, ShieldAlert, Scale } from 'lucide-react';
 
-export default function UserRegistration() {
+export default function UserPortal() {
     const { address, isConnected } = useAccount();
-    // 1. We added 'isPending' here to track the loading state
-    const { writeContractAsync, isPending } = useWriteContract();
+    const [beneficiary, setBeneficiary] = useState('');
+    const [hospital, setHospital] = useState('');
+    const [gov, setGov] = useState('');
+    const [verifier, setVerifier] = useState('');
+    const [secretNote, setSecretNote] = useState('');
+    const [file, setFile] = useState<File | null>(null);
     const [mounted, setMounted] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const { writeContractAsync, isPending } = useWriteContract();
 
-    useEffect(() => {
-        setMounted(true);
-    }, []);
+    useEffect(() => setMounted(true), []);
 
-    const [formData, setFormData] = useState({
-        beneficiary: '',
-        hospital: '',
-        gov: '',
-        verifier: '',
-        secretNote: ''
+    // 1. Read the user's own vault status
+    const { data: vault, refetch: refetchVault } = useReadContract({
+        address: AFTERLIFE_CONTRACT_ADDRESS,
+        abi: AFTERLIFE_ABI,
+        functionName: 'vaults',
+        args: [address as `0x${string}`],
+        query: { enabled: !!address }
     });
 
-    const handleRegister = async () => {
-        console.log("1. Button Clicked!"); // Debug log
+    const isHospitalInitiated = vault && (vault as any)[6] === true;
+    const hasVault = vault && (vault as any)[0] !== '0x0000000000000000000000000000000000000000';
 
-        if (!isConnected) {
-            alert("Please connect your wallet first!");
-            return;
-        }
-
-        // Basic validation before hitting the blockchain
-        if (!formData.beneficiary || !formData.hospital || !formData.gov || !formData.verifier) {
-            alert("Please fill in all 4 wallet addresses.");
-            return;
-        }
-
+    const handleCancelProtocol = async () => {
         try {
-            console.log("2. Sending to MetaMask..."); // Debug log
-
             const tx = await writeContractAsync({
                 address: AFTERLIFE_CONTRACT_ADDRESS,
                 abi: AFTERLIFE_ABI,
-                functionName: 'createVault',
-                args: [
-                    formData.beneficiary as `0x${string}`,
-                    formData.hospital as `0x${string}`,
-                    formData.gov as `0x${string}`,
-                    formData.verifier as `0x${string}`,
-                ],
-                // 👇 Add these two lines to bypass Amoy's strict minimums
+                functionName: 'cancelDeathProtocol',
+                // Using safe mobile gas limits
                 maxPriorityFeePerGas: parseGwei('30'),
                 maxFeePerGas: parseGwei('40'),
             });
-
-            console.log("3. Transaction Hash Received:", tx); // Debug log
-
             if (tx) {
-                const { error } = await supabase.from('vault_secrets').insert({
-                    owner_wallet: address?.toLowerCase(),
-                    beneficiary_wallet: formData.beneficiary.toLowerCase(),
-                    encrypted_note: formData.secretNote,
-                    status: 'active'
-                });
-
-                if (error) {
-                    console.error("Supabase Error:", error);
-                    alert("Vault created on-chain, but failed to save secret note to database.");
-                } else {
-                    alert("✅ Vault Created Successfully!");
-                }
+                alert("🛑 Emergency Protocol Successfully Cancelled.");
+                refetchVault();
             }
         } catch (err: any) {
-            console.error("Registration Error:", err);
-            alert(`Registration failed: ${err.shortMessage || err.message}`);
+            alert(`Cancellation Failed: ${err.message}`);
         }
+    };
+
+    const handleRegister = async () => {
+        if (!isConnected || !beneficiary || !hospital || !gov || !verifier || !secretNote) return;
+        try {
+            setIsUploading(true);
+            let finalFileUrl = null;
+
+            if (file && address) {
+                const fileExt = file.name.split('.').pop();
+                const filePath = `${address.toLowerCase()}/legacy_document.${fileExt}`;
+                const { error: uploadError } = await supabase.storage.from('vault_files').upload(filePath, file, { upsert: true });
+                if (uploadError) throw uploadError;
+                const { data: urlData } = supabase.storage.from('vault_files').getPublicUrl(filePath);
+                finalFileUrl = urlData.publicUrl;
+            }
+
+            const { error: dbError } = await supabase.from('vault_secrets').insert([{
+                owner_wallet: address?.toLowerCase(), beneficiary_wallet: beneficiary.toLowerCase(),
+                encrypted_note: secretNote, file_url: finalFileUrl, status: 'active'
+            }]);
+            if (dbError) throw dbError;
+
+            setIsUploading(false);
+
+            const tx = await writeContractAsync({
+                address: AFTERLIFE_CONTRACT_ADDRESS, abi: AFTERLIFE_ABI, functionName: 'createVault',
+                args: [beneficiary as `0x${string}`, hospital as `0x${string}`, gov as `0x${string}`, verifier as `0x${string}`],
+                maxPriorityFeePerGas: parseGwei('30'), maxFeePerGas: parseGwei('40'),
+            });
+            if (tx) { alert("✅ Vault Secured Successfully!"); refetchVault(); }
+        } catch (err: any) { setIsUploading(false); alert(`Error: ${err.message}`); }
     };
 
     if (!mounted) return null;
 
     return (
-        <div className="max-w-xl mx-auto py-20 px-6">
-            <div className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold">Setup Your Vault</h1>
-                <ConnectButton />
+        <div className="min-h-screen bg-slate-950 bg-[url('/bg-pattern.svg')] text-white py-12 px-6 relative overflow-hidden flex flex-col items-center">
+            {/* Ambient Glow turns RED if initiated, otherwise SLATE */}
+            <div className={`absolute top-0 right-0 w-[600px] h-[600px] blur-[150px] rounded-full pointer-events-none transition-colors duration-1000 ${isHospitalInitiated ? 'bg-red-600/20' : 'bg-slate-600/10'}`}></div>
+
+            <div className="max-w-3xl w-full z-10">
+                <header className="flex justify-between items-center mb-12 border-b border-white/10 pb-6">
+                    <div>
+                        <h1 className="text-4xl font-bold text-slate-200 flex items-center gap-3"><User /> Citizen Vault</h1>
+                        <p className="text-slate-400 mt-2 font-mono text-sm">Secure your digital inheritance.</p>
+                    </div>
+                    <ConnectButton />
+                </header>
+
+                {!isConnected ? (
+                    <div className="p-6 bg-white/5 border border-white/10 rounded-xl text-center backdrop-blur-xl">Please connect your Owner wallet (Account 1).</div>
+                ) : isHospitalInitiated ? (
+                    /* THE EMERGENCY OVERRIDE UI */
+                    <div className="bg-red-950/40 backdrop-blur-xl p-10 rounded-2xl border border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)] flex flex-col items-center text-center animate-in fade-in zoom-in duration-300">
+                        <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-6 animate-pulse border border-red-500/50">
+                            <AlertOctagon size={40} className="text-red-500" />
+                        </div>
+                        <h2 className="text-3xl font-bold text-red-500 mb-4 tracking-widest uppercase">Emergency Protocol Active</h2>
+                        <p className="text-red-200/80 mb-8 max-w-lg">
+                            An authorized medical entity has reported a vital sign failure and initiated the 72-hour multi-sig countdown. If you are alive, you must cancel this process immediately.
+                        </p>
+                        <button
+                            onClick={handleCancelProtocol} disabled={isPending}
+                            className="w-full py-5 bg-red-600 hover:bg-red-500 text-white font-black rounded-xl transition-all shadow-[0_0_30px_rgba(239,68,68,0.5)] tracking-widest text-lg flex justify-center gap-3"
+                        >
+                            {isPending ? "Transmitting Cancellation..." : "I AM ALIVE — CANCEL OVERRIDE"}
+                        </button>
+                    </div>
+                ) : hasVault ? (
+                    /* THE ALREADY REGISTERED UI */
+                    <div className="p-10 bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-xl text-center shadow-2xl">
+                        <Shield size={48} className="mx-auto text-green-400 mb-4 opacity-50" />
+                        <h2 className="text-2xl font-bold text-slate-200 mb-2">Vault Secured</h2>
+                        <p className="text-slate-400 font-mono text-sm">Your digital legacy is actively protected on the Polygon blockchain.</p>
+                    </div>
+                ) : (
+                    /* THE REGISTRATION UI */
+                    <div className="bg-slate-900/40 backdrop-blur-xl p-8 rounded-2xl border border-white/10 shadow-2xl space-y-6">
+                        <div>
+                            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Shield size={16} /> Beneficiary Wallet</label>
+                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setBeneficiary(e.target.value.trim())} />
+                        </div>
+                        <div>
+                            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Activity size={16} /> Designated Hospital Wallet</label>
+                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setHospital(e.target.value.trim())} />
+                        </div>
+                        <div>
+                            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><ShieldAlert size={16} /> Designated Government Wallet</label>
+                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setGov(e.target.value.trim())} />
+                        </div>
+                        <div>
+                            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Scale size={16} /> Designated Verifier Wallet</label>
+                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setVerifier(e.target.value.trim())} />
+                        </div>
+                        <div>
+                            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Database size={16} /> Secret Legacy Note</label>
+                            <textarea placeholder="Private instructions, seed phrases, or final messages..." rows={4} className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setSecretNote(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><FileText size={16} /> Attach Legal Document (Optional)</label>
+                            <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full p-3 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-slate-200 hover:file:bg-white/20 cursor-pointer" />
+                        </div>
+                        <button onClick={handleRegister} disabled={isPending || isUploading} className="w-full py-4 bg-slate-100 hover:bg-white text-slate-950 disabled:bg-white/10 disabled:text-slate-500 font-bold rounded-xl transition-all cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.2)] disabled:shadow-none">
+                            {isUploading ? "Encrypting File..." : isPending ? "Securing Vault..." : "INITIALIZE PROTOCOL"}
+                        </button>
+                    </div>
+                )}
             </div>
-
-            {!isConnected ? (
-                <div className="bg-slate-900 p-10 rounded-xl border border-slate-800 text-center">
-                    <p className="text-slate-400 mb-6">Connect your wallet to start securing your digital legacy.</p>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    <input
-                        placeholder="Beneficiary Wallet Address (0x...)"
-                        className="w-full p-3 bg-slate-800 rounded border border-slate-700 outline-none focus:border-blue-500"
-                        onChange={(e) => setFormData({ ...formData, beneficiary: e.target.value.trim() })}
-                    />
-                    <input
-                        placeholder="Hospital Authorized Wallet (0x...)"
-                        className="w-full p-3 bg-slate-800 rounded border border-slate-700 outline-none focus:border-blue-500"
-                        onChange={(e) => setFormData({ ...formData, hospital: e.target.value.trim() })}
-                    />
-                    <input
-                        placeholder="Government Registry Wallet (0x...)"
-                        className="w-full p-3 bg-slate-800 rounded border border-slate-700 outline-none focus:border-blue-500"
-                        onChange={(e) => setFormData({ ...formData, gov: e.target.value.trim() })}
-                    />
-                    <input
-                        placeholder="Independent Verifier Wallet (0x...)"
-                        className="w-full p-3 bg-slate-800 rounded border border-slate-700 outline-none focus:border-blue-500"
-                        onChange={(e) => setFormData({ ...formData, verifier: e.target.value.trim() })}
-                    />
-                    <textarea
-                        placeholder="Encrypted Note to Beneficiary"
-                        className="w-full p-3 bg-slate-800 rounded border border-slate-700 h-32 outline-none focus:border-blue-500"
-                        onChange={(e) => setFormData({ ...formData, secretNote: e.target.value })}
-                    />
-
-                    {/* 2. Changed from type="submit" to a direct onClick, and added disabled state */}
-                    <button
-                        onClick={handleRegister}
-                        disabled={isPending}
-                        className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 rounded font-bold transition cursor-pointer"
-                    >
-                        {isPending ? "Confirming in MetaMask..." : "Secure My Digital Legacy"}
-                    </button>
-                </div>
-            )}
         </div>
     );
 }
