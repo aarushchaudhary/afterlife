@@ -109,7 +109,7 @@ export default function HospitalDashboard() {
                             </div>
 
                             {/* RIGHT PANE: The Action Panel */}
-                            <div className="w-2/3 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 p-8 flex flex-col">
+                            <div className="w-2/3 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 p-8 flex flex-col overflow-y-auto">
                                 {!selectedWallet ? (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-500 font-mono">
                                         <Activity size={48} className="mb-4 opacity-20" />
@@ -120,26 +120,25 @@ export default function HospitalDashboard() {
                                         <h2 className="text-2xl font-bold text-slate-100 border-b border-white/10 pb-4">Vault Details</h2>
                                         <div className="p-6 bg-black/40 rounded-xl border border-white/10 space-y-3 font-mono text-sm backdrop-blur-md">
                                             <p><span className="text-slate-500">Owner:</span> {selectedWallet}</p>
-                                            <p><span className="text-slate-500">Beneficiary:</span> {(vault as any)[1]}</p>
                                         </div>
                                         <div className="p-6 bg-black/40 rounded-xl border border-white/10 backdrop-blur-md">
                                             <p className="text-slate-500 text-xs uppercase tracking-widest mb-4">Blockchain Status</p>
                                             <div className="flex gap-4">
-                                                <Badge label="Hospital" active={(vault as any)[6]} />
-                                                <Badge label="Government" active={(vault as any)[7]} />
-                                                <Badge label="Verifier" active={(vault as any)[8]} />
+                                                <Badge label="Hospital" active={(vault as any)[5]} />
+                                                <Badge label="Government" active={(vault as any)[6]} />
+                                                <Badge label="Verifier" active={(vault as any)[7]} />
                                             </div>
                                         </div>
                                         {/* Conditionally render the Countdown Clock if Hospital has initiated */}
-                                        {(vault as any)[6] && !(vault as any)[9] && (
+                                        {(vault as any)[5] && !(vault as any)[8] && (
                                             <div className="mt-6 animate-in fade-in zoom-in duration-500">
                                                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
                                                     Emergency Override Window
                                                 </p>
-                                                <CountdownClock initiationTime={Number((vault as any)[5])} />
+                                                <CountdownClock initiationTime={Number((vault as any)[4])} />
                                             </div>
                                         )}
-                                        {!(vault as any)[6] && (
+                                        {!(vault as any)[5] && (
                                             <button
                                                 onClick={handleInitiate} disabled={isPending}
                                                 className="w-full py-4 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 font-bold rounded transition cursor-pointer flex justify-center items-center gap-2"

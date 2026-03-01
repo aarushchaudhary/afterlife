@@ -47,7 +47,7 @@ export default function UserPortal() {
         query: { enabled: !!address }
     });
 
-    const isHospitalInitiated = vault && (vault as any)[6] === true;
+    const isHospitalInitiated = vault && (vault as any)[5] === true;
     const hasVault = vault && (vault as any)[0] !== '0x0000000000000000000000000000000000000000';
 
     const handleCancelProtocol = async () => {
@@ -85,7 +85,7 @@ export default function UserPortal() {
                 finalFileUrl = urlData.publicUrl;
             }
 
-            const { error: dbError } = await supabase.from('vault_secrets').insert([{
+            const { error: dbError } = await supabase.from('vault_secrets').upsert([{
                 owner_wallet: address?.toLowerCase(),
                 beneficiary_wallets: heirs.map(h => h.wallet.toLowerCase()),
                 encrypted_note: secretNote, file_url: finalFileUrl, status: 'active'
@@ -136,7 +136,7 @@ export default function UserPortal() {
                             An authorized medical entity has reported a vital sign failure and initiated the 72-hour multi-sig countdown. If you are alive, you must cancel this process immediately.
                         </p>
                         <div className="mb-8 w-full max-w-md">
-                            <CountdownClock initiationTime={Number((vault as any)[5])} />
+                            <CountdownClock initiationTime={Number((vault as any)[4])} />
                         </div>
                         <button
                             onClick={handleCancelProtocol} disabled={isPending}

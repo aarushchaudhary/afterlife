@@ -136,6 +136,7 @@ async def listen_for_events():
         try:
             current_block = w3.eth.block_number
             if current_block > last_checked_block:
+                print(f"🔍 Scanning blocks {last_checked_block} to {current_block}...")
                 
                 # 1. Check for VaultCreated
                 created_logs = contract.events.VaultCreated.get_logs(from_block=last_checked_block + 1, to_block=current_block)

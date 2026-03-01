@@ -107,7 +107,7 @@ export default function GovernmentDashboard() {
                                 </div>
                             </div>
 
-                            <div className="w-2/3 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 p-8 flex flex-col">
+                            <div className="w-2/3 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 p-8 flex flex-col overflow-y-auto">
                                 {!selectedWallet ? (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-500 font-mono">
                                         <ShieldAlert size={48} className="mb-4 opacity-20" />
@@ -119,20 +119,20 @@ export default function GovernmentDashboard() {
                                         <div className="p-6 bg-black/40 rounded-xl border border-white/10 backdrop-blur-md">
                                             <p className="text-slate-500 text-xs uppercase tracking-widest mb-4">Multi-Sig Consensus</p>
                                             <div className="flex gap-4">
-                                                <Badge label="Hospital" active={(vault as any)[6]} />
-                                                <Badge label="Government" active={(vault as any)[7]} />
-                                                <Badge label="Verifier" active={(vault as any)[8]} />
+                                                <Badge label="Hospital" active={(vault as any)[5]} />
+                                                <Badge label="Government" active={(vault as any)[6]} />
+                                                <Badge label="Verifier" active={(vault as any)[7]} />
                                             </div>
                                         </div>
-                                        {(vault as any)[6] && !(vault as any)[9] && (
+                                        {(vault as any)[5] && !(vault as any)[8] && (
                                             <div className="mt-6 animate-in fade-in zoom-in duration-500">
                                                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
                                                     State Audit Time Remaining
                                                 </p>
-                                                <CountdownClock initiationTime={Number((vault as any)[5])} />
+                                                <CountdownClock initiationTime={Number((vault as any)[4])} />
                                             </div>
                                         )}
-                                        {!(vault as any)[7] && (vault as any)[5] > 0 && (
+                                        {!(vault as any)[6] && (vault as any)[4] > 0 && (
                                             <button
                                                 onClick={handleApprove} disabled={isPending}
                                                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 font-bold rounded transition cursor-pointer flex justify-center items-center gap-2"

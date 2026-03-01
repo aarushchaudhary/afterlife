@@ -58,3 +58,76 @@ USING (
     current_setting('request.headers')::json->>'x-user-wallet' = ANY(beneficiary_wallets)
     AND status = 'unlocked'
 );
+
+-- ==========================================
+-- 1. RLS FOR VAULT SECRETS TABLE
+-- ==========================================
+
+-- Allow anyone to create a vault (Insert)
+CREATE POLICY "Allow public inserts on vault_secrets" 
+ON vault_secrets 
+FOR INSERT 
+TO public 
+WITH CHECK (true);
+
+-- Allow public fetching (Select)
+-- (Your Next.js frontend needs this so the Beneficiary can query the payload)
+CREATE POLICY "Allow public select on vault_secrets" 
+ON vault_secrets 
+FOR SELECT 
+TO public 
+USING (true); 
+
+-- ==========================================
+-- 2. RLS FOR STORAGE BUCKET (vault_files)
+-- ==========================================
+
+-- Allow public uploads to the specific bucket
+CREATE POLICY "Allow public uploads to vault_files" 
+ON storage.objects 
+FOR INSERT 
+TO public 
+WITH CHECK (bucket_id = 'vault_files');
+
+-- Allow public updates (Required because we used { upsert: true })
+CREATE POLICY "Allow public updates to vault_files" 
+ON storage.objects 
+FOR UPDATE 
+TO public 
+USING (bucket_id = 'vault_files');
+
+-- Allow public reads (So the beneficiary can download the file)
+CREATE POLICY "Allow public reads from vault_files" 
+ON storage.objects 
+FOR SELECT 
+TO public 
+USING (bucket_id = 'vault_files');
+
+-- Allow public updates for the upsert command
+CREATE POLICY "Allow public updates on vault_secrets" 
+ON vault_secrets 
+FOR UPDATE 
+TO public 
+USING (true);
+
+-- Allow the frontend portals to read the verification queue
+CREATE POLICY "Allow public select on verification_queue" 
+ON verification_queue 
+FOR SELECT 
+TO public 
+USING (true);
+
+-- 1. Allow the Oracle to add new patients to the queue (Insert)
+CREATE POLICY "Allow public inserts on verification_queue" 
+ON verification_queue 
+FOR INSERT 
+TO public 
+WITH CHECK (true);
+
+-- 2. Allow the Oracle to update patient status (Update)
+-- This is needed for when the status changes from 'active' to 'initiated' or 'unlocked'
+CREATE POLICY "Allow public updates on verification_queue" 
+ON verification_queue 
+FOR UPDATE 
+TO public 
+USING (true);

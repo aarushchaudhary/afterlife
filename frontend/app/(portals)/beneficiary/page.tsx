@@ -96,7 +96,7 @@ export default function BeneficiaryPortal() {
 
     if (!mounted) return null;
 
-    const isUnlocked = Boolean(vault && (vault as any)[9] === true);
+    const isUnlocked = Boolean(vault && (vault as any)[8] === true);
 
     return (
         <div className="min-h-screen bg-[url('/bg-pattern.svg')] bg-slate-950 text-white flex flex-col items-center py-12 px-6 relative overflow-hidden">
@@ -144,9 +144,9 @@ export default function BeneficiaryPortal() {
                                 </div>
 
                                 {/* Show countdown if initiated but not fully unlocked */}
-                                {(vault as any)[6] && !isUnlocked && (
+                                {(vault as any)[5] && !isUnlocked && (
                                     <div className="animate-in fade-in zoom-in duration-500">
-                                        <CountdownClock initiationTime={Number((vault as any)[5])} />
+                                        <CountdownClock initiationTime={Number((vault as any)[4])} />
                                     </div>
                                 )}
 
