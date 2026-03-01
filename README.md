@@ -21,6 +21,61 @@ Afterlife Protocol is a secure, automated system for transferring digital assets
 | **4** | `/verifier` | Legal Verification | **Account 4** (Verifier) |
 | **5** | `/beneficiary` | Claim & Decrypt Note | **Account 2** (Beneficiary) |
 
+## 🏗️ System Architecture & Data Flow
+
+The Afterlife Protocol utilizes a hybrid Web2/Web3 architecture. State changes are strictly enforced on the Polygon Amoy blockchain, while a real-time Python Oracle indexes these events to trigger off-chain metadata updates in Supabase.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    
+    actor User as Citizen (MetaMask)
+    participant UI as Next.js Frontend
+    participant DB as Supabase (DB & Storage)
+    participant SC as Polygon Contract
+    participant Oracle as Python Oracle
+    actor Auth as Designated Authorities
+    actor Heir as Beneficiary
+
+    rect rgb(30, 41, 59)
+    note right of User: Phase 1: Secure Registration
+    User->>UI: Enter Heirs, Percentages & Legacy File
+    UI->>DB: Encrypt & upload file to `vault_files` bucket
+    DB-->>UI: Return file URL
+    UI->>DB: Save `encrypted_note` & `file_url`
+    UI->>User: Request MetaMask Signature
+    User->>SC: `createVault(heirs, percentages, hospital, gov, verifier)`
+    SC-->>Oracle: Emit `VaultCreated` Event
+    Oracle->>DB: Insert owner into `verification_queue` (Status: Active)
+    end
+
+    rect rgb(69, 10, 10)
+    note right of User: Phase 2: Emergency Protocol
+    Auth->>SC: Hospital calls `initiateDeath(owner)`
+    SC-->>Oracle: Emit `ProtocolInitiated` Event
+    Oracle->>DB: Update queue to `status: initiated`
+    end
+
+    rect rgb(6, 78, 59)
+    note right of User: Phase 3: Hybrid Consensus
+    Auth->>SC: Gov / Verifier call `approveDeath(owner)`
+    SC-->>Oracle: Emit `AssetsUnlocked` (if 3/3 consensus reached)
+    Oracle->>DB: Update queue to `status: unlocked`
+    end
+
+    rect rgb(88, 28, 135)
+    note right of User: Phase 4: Beneficiary Claim
+    Heir->>UI: Connect Wallet & Request Claim
+    UI->>SC: Check `isUnlocked` & `getBeneficiaries`
+    SC-->>UI: Confirm Access Granted
+    UI->>DB: Query `vault_secrets` for payload
+    DB-->>UI: Return `encrypted_note` & `file_url`
+    UI-->>Heir: Render Decrypted Vault & Download Link
+    end
+```
+
+> 📁 **API Documentation:** The Oracle's OpenAPI spec is available at [`docs/openapi.json`](docs/openapi.json). Run the oracle locally and visit `http://localhost:8000/docs` for the interactive Swagger UI.
+
 ## ⚙️ Setup & Configuration
 
 ### 1. Polygon Amoy Setup (Smart Contract)

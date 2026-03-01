@@ -21,7 +21,11 @@ contract AfterlifeVaultTest is Test {
     function test_FullAfterlifeProtocolFlow() public {
         // 1. Owner registers the vault
         vm.prank(owner); // Simulates the next transaction coming from 'owner'
-        vault.createVault(beneficiary, hospital, gov, verifier);
+        address[] memory heirs = new address[](1);
+        heirs[0] = beneficiary;
+        uint256[] memory pcts = new uint256[](1);
+        pcts[0] = 100;
+        vault.createVault(heirs, pcts, hospital, gov, verifier);
 
         // 2. Hospital initiates the protocol
         vm.prank(hospital);
@@ -42,7 +46,11 @@ contract AfterlifeVaultTest is Test {
 
     function test_CannotApproveAfter72Hours() public {
         vm.prank(owner);
-        vault.createVault(beneficiary, hospital, gov, verifier);
+        address[] memory heirs = new address[](1);
+        heirs[0] = beneficiary;
+        uint256[] memory pcts = new uint256[](1);
+        pcts[0] = 100;
+        vault.createVault(heirs, pcts, hospital, gov, verifier);
 
         vm.prank(hospital);
         vault.initiateDeath(owner);

@@ -2,11 +2,17 @@
 pragma solidity ^0.8.20;
 
 contract AfterlifeVault {
+
+    // Percentage-based beneficiary target
+    struct BeneficiaryTarget {
+        address wallet;
+        uint256 percentage; // Must sum to 100
+    }
     
     // 1. The Core Data Structure
     struct Vault {
         address owner;
-        address beneficiary;
+        BeneficiaryTarget[] beneficiaries;
         address hospitalAddress;
         address govAddress;
         address verifierAddress;
@@ -23,10 +29,10 @@ contract AfterlifeVault {
     mapping(address => Vault) public vaults;
 
     // 3. Events (These tell your Python backend when to send emails)
-    event VaultCreated(address indexed owner, address beneficiary);
+    event VaultCreated(address indexed owner);
     event ProtocolInitiated(address indexed owner, uint256 timestamp);
     event ApprovalReceived(address indexed owner, address indexed approver);
-    event AssetsUnlocked(address indexed owner, address indexed beneficiary);
+    event AssetsUnlocked(address indexed owner);
     event ProtocolCancelled(address indexed owner);
 
     // 4. Custom Errors (Saves gas compared to require strings)
@@ -39,29 +45,38 @@ contract AfterlifeVault {
 
     // --- MAIN FUNCTIONS ---
 
-    // Step 1: User registers their asset and assigns the 3 keys
+    // Step 1: User registers their asset with multiple heirs and assigns the 3 keys
     function createVault(
-        address _beneficiary,
+        address[] memory _heirWallets,
+        uint256[] memory _percentages,
         address _hospitalAddress,
         address _govAddress,
         address _verifierAddress
     ) external {
         if (vaults[msg.sender].owner != address(0)) revert VaultAlreadyExists();
+        require(_heirWallets.length == _percentages.length, "Arrays must match");
 
-        vaults[msg.sender] = Vault({
-            owner: msg.sender,
-            beneficiary: _beneficiary,
-            hospitalAddress: _hospitalAddress,
-            govAddress: _govAddress,
-            verifierAddress: _verifierAddress,
-            initiationTime: 0,
-            hospitalApproved: false,
-            govApproved: false,
-            verifierApproved: false,
-            isUnlocked: false
-        });
+        // Verify percentages sum to exactly 100
+        uint256 totalPercentage = 0;
+        for (uint256 i = 0; i < _percentages.length; i++) {
+            totalPercentage += _percentages[i];
+        }
+        require(totalPercentage == 100, "Percentages must equal 100");
 
-        emit VaultCreated(msg.sender, _beneficiary);
+        Vault storage v = vaults[msg.sender];
+        v.owner = msg.sender;
+        v.hospitalAddress = _hospitalAddress;
+        v.govAddress = _govAddress;
+        v.verifierAddress = _verifierAddress;
+
+        for (uint256 i = 0; i < _heirWallets.length; i++) {
+            v.beneficiaries.push(BeneficiaryTarget({
+                wallet: _heirWallets[i],
+                percentage: _percentages[i]
+            }));
+        }
+
+        emit VaultCreated(msg.sender);
     }
 
     // Step 2: Hospital triggers the 72-hour countdown
@@ -103,13 +118,18 @@ contract AfterlifeVault {
         // Auto-unlock if consensus is reached
         if (vault.hospitalApproved && vault.govApproved && vault.verifierApproved) {
             vault.isUnlocked = true;
-            emit AssetsUnlocked(_owner, vault.beneficiary);
+            emit AssetsUnlocked(_owner);
         }
     }
 
     // Step 4: Beneficiary checks if they can access the off-chain data
     function isClaimable(address _owner) external view returns (bool) {
         return vaults[_owner].isUnlocked;
+    }
+
+    // Step 5: Read the beneficiary array from the frontend
+    function getBeneficiaries(address _owner) external view returns (BeneficiaryTarget[] memory) {
+        return vaults[_owner].beneficiaries;
     }
 
     function cancelDeathProtocol() external {

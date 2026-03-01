@@ -6,6 +6,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { Key, Lock, Unlock, ShieldCheck, Terminal } from 'lucide-react';
+import CountdownClock from '@/components/CountdownClock';
 
 export default function BeneficiaryPortal() {
     const { address, isConnected } = useAccount();
@@ -40,11 +41,24 @@ export default function BeneficiaryPortal() {
         query: { enabled: searchAddress.length === 42 }
     });
 
+    // Fetch the beneficiaries array from the contract
+    const { data: beneficiariesList } = useReadContract({
+        address: AFTERLIFE_CONTRACT_ADDRESS,
+        abi: AFTERLIFE_ABI,
+        functionName: 'getBeneficiaries',
+        args: [searchAddress as `0x${string}`],
+        query: { enabled: searchAddress.length === 42 }
+    });
+
     const handleClaim = async () => {
         if (!address || !vault) return;
 
-        if ((vault as any)[1].toLowerCase() !== address.toLowerCase()) {
-            alert("🛑 Unauthorized: You are not the designated beneficiary.");
+        // Check if connected wallet is in the beneficiaries array
+        const isBeneficiary = beneficiariesList && (beneficiariesList as any[]).some(
+            (b: any) => b.wallet.toLowerCase() === address.toLowerCase()
+        );
+        if (!isBeneficiary) {
+            alert("🛑 Unauthorized: You are not a designated beneficiary.");
             return;
         }
 
@@ -56,7 +70,7 @@ export default function BeneficiaryPortal() {
                 .from('vault_secrets')
                 .select('encrypted_note, file_url')
                 .ilike('owner_wallet', searchAddress)
-                .ilike('beneficiary_wallet', address)
+                .contains('beneficiary_wallets', [address.toLowerCase()])
                 .limit(1);
 
             if (error) throw error;
@@ -128,6 +142,13 @@ export default function BeneficiaryPortal() {
                                     </div>
                                     {isUnlocked && <ShieldCheck size={40} className="text-green-500/20" />}
                                 </div>
+
+                                {/* Show countdown if initiated but not fully unlocked */}
+                                {(vault as any)[6] && !isUnlocked && (
+                                    <div className="animate-in fade-in zoom-in duration-500">
+                                        <CountdownClock initiationTime={Number((vault as any)[5])} />
+                                    </div>
+                                )}
 
                                 {!secretNote && !decrypting ? (
                                     <button

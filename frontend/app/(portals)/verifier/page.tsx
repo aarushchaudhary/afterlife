@@ -7,6 +7,7 @@ import { parseGwei } from 'viem';
 import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { Search, Scale, RefreshCw, CheckSquare } from 'lucide-react';
+import CountdownClock from '@/components/CountdownClock';
 
 export default function VerifierDashboard() {
     const { isConnected } = useAccount();
@@ -122,6 +123,14 @@ export default function VerifierDashboard() {
                                                 <Badge label="Verifier" active={(vault as any)[8]} />
                                             </div>
                                         </div>
+                                        {(vault as any)[6] && !(vault as any)[9] && (
+                                            <div className="mt-6 animate-in fade-in zoom-in duration-500">
+                                                <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                    Legal Audit Time Remaining
+                                                </p>
+                                                <CountdownClock initiationTime={Number((vault as any)[5])} />
+                                            </div>
+                                        )}
                                         {!(vault as any)[8] && (vault as any)[5] > 0 && (
                                             <button
                                                 onClick={handleApprove} disabled={isPending}

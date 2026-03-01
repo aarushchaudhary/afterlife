@@ -39,8 +39,7 @@ CONTRACT_ABI = [
     {
         "anonymous": False,
         "inputs": [
-            {"indexed": True, "internalType": "address", "name": "owner", "type": "address"},
-            {"indexed": False, "internalType": "address", "name": "beneficiary", "type": "address"}
+            {"indexed": True, "internalType": "address", "name": "owner", "type": "address"}
         ],
         "name": "VaultCreated",
         "type": "event"
@@ -57,8 +56,7 @@ CONTRACT_ABI = [
     {
         "anonymous": False,
         "inputs": [
-            {"indexed": True, "internalType": "address", "name": "owner", "type": "address"},
-            {"indexed": True, "internalType": "address", "name": "beneficiary", "type": "address"}
+            {"indexed": True, "internalType": "address", "name": "owner", "type": "address"}
         ],
         "name": "AssetsUnlocked",
         "type": "event"
@@ -78,12 +76,11 @@ if CONTRACT_ADDRESS:
 
 # --- DATABASE HANDLERS ---
 
-def handle_vault_created(owner: str, beneficiary: str):
+def handle_vault_created(owner: str):
     """Adds a new row to the verification queue when a vault is registered."""
     try:
         data = {
             "owner_wallet": owner.lower(),
-            "beneficiary_wallet": beneficiary.lower(),
             "status": "active"
         }
         supabase.table("verification_queue").upsert(data).execute()
@@ -143,7 +140,7 @@ async def listen_for_events():
                 # 1. Check for VaultCreated
                 created_logs = contract.events.VaultCreated.get_logs(from_block=last_checked_block + 1, to_block=current_block)
                 for event in created_logs:
-                    handle_vault_created(event['args']['owner'], event['args']['beneficiary'])
+                    handle_vault_created(event['args']['owner'])
 
                 # 2. Check for ProtocolInitiated
                 initiated_logs = contract.events.ProtocolInitiated.get_logs(from_block=last_checked_block + 1, to_block=current_block)

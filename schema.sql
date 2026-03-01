@@ -13,7 +13,7 @@ CREATE TABLE roles (
 -- ==========================================
 CREATE TABLE vault_secrets (
     owner_wallet TEXT PRIMARY KEY,
-    beneficiary_wallet TEXT NOT NULL,
+    beneficiary_wallets TEXT[],
     encrypted_note TEXT,
     file_url TEXT,
     status TEXT DEFAULT 'active' CHECK (status IN ('active', 'unlocked')),
@@ -22,7 +22,6 @@ CREATE TABLE vault_secrets (
 
 CREATE TABLE verification_queue (
     owner_wallet TEXT PRIMARY KEY,
-    beneficiary_wallet TEXT,
     status TEXT DEFAULT 'active', -- 'active', 'initiated', 'unlocked'
     initiated_at TIMESTAMP WITH TIME ZONE
 );
@@ -33,7 +32,6 @@ CREATE TABLE verification_queue (
 -- ==========================================
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vault_secrets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE vault_secrets ADD COLUMN file_url TEXT;
 
 -- ==========================================
 -- 4. RLS POLICIES FOR 'ROLES'
@@ -57,6 +55,6 @@ USING (owner_wallet = current_setting('request.headers')::json->>'x-user-wallet'
 CREATE POLICY "Beneficiaries can read unlocked vaults" 
 ON vault_secrets FOR SELECT 
 USING (
-    beneficiary_wallet = current_setting('request.headers')::json->>'x-user-wallet' 
+    current_setting('request.headers')::json->>'x-user-wallet' = ANY(beneficiary_wallets)
     AND status = 'unlocked'
 );

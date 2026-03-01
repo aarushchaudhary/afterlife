@@ -1,5 +1,5 @@
 // frontend/lib/constants.ts
-export const AFTERLIFE_CONTRACT_ADDRESS = "0x5d7501898FE4b6170E261eA3A3014cdd64D40B47";
+export const AFTERLIFE_CONTRACT_ADDRESS = "0x08fCCb1Fc3D6d409DA1d7165058e68bd97F238E9";
 
 export const AFTERLIFE_ABI = [
     {

@@ -7,6 +7,7 @@ import { parseGwei } from 'viem';
 import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { Search, Activity, RefreshCw } from 'lucide-react';
+import CountdownClock from '@/components/CountdownClock';
 
 export default function HospitalDashboard() {
     const { isConnected } = useAccount();
@@ -129,6 +130,15 @@ export default function HospitalDashboard() {
                                                 <Badge label="Verifier" active={(vault as any)[8]} />
                                             </div>
                                         </div>
+                                        {/* Conditionally render the Countdown Clock if Hospital has initiated */}
+                                        {(vault as any)[6] && !(vault as any)[9] && (
+                                            <div className="mt-6 animate-in fade-in zoom-in duration-500">
+                                                <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                    Emergency Override Window
+                                                </p>
+                                                <CountdownClock initiationTime={Number((vault as any)[5])} />
+                                            </div>
+                                        )}
                                         {!(vault as any)[6] && (
                                             <button
                                                 onClick={handleInitiate} disabled={isPending}
