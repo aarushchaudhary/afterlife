@@ -27,6 +27,7 @@ contract AfterlifeVault {
     event ProtocolInitiated(address indexed owner, uint256 timestamp);
     event ApprovalReceived(address indexed owner, address indexed approver);
     event AssetsUnlocked(address indexed owner, address indexed beneficiary);
+    event ProtocolCancelled(address indexed owner);
 
     // 4. Custom Errors (Saves gas compared to require strings)
     error Unauthorized();
@@ -109,5 +110,19 @@ contract AfterlifeVault {
     // Step 4: Beneficiary checks if they can access the off-chain data
     function isClaimable(address _owner) external view returns (bool) {
         return vaults[_owner].isUnlocked;
+    }
+
+    function cancelDeathProtocol() external {
+        Vault storage vault = vaults[msg.sender];
+        require(vault.owner != address(0), "Vault not active");
+        require(vault.hospitalApproved, "Protocol not initiated");
+        require(block.timestamp < vault.initiationTime + 72 hours, "Too late, 72 hours passed");
+        require(!vault.isUnlocked, "Vault already unlocked");
+
+        // Reset the state back to normal
+        vault.hospitalApproved = false;
+        vault.initiationTime = 0;
+
+        emit ProtocolCancelled(msg.sender);
     }
 }
