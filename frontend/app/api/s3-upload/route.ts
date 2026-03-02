@@ -4,10 +4,10 @@ import { NextResponse } from "next/server";
 
 // Initialize the S3 client
 const s3Client = new S3Client({
-    region: process.env.AWS_REGION!,
+    region: process.env.S3_REGION!,
     credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        accessKeyId: process.env.S3_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
     },
 });
 
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
         const objectKey = `vaults/${ownerWallet}/${uniqueFileName}`;
 
         const command = new PutObjectCommand({
-            Bucket: process.env.AWS_S3_BUCKET_NAME,
+            Bucket: process.env.S3_S3_BUCKET_NAME,
             Key: objectKey,
             ContentType: fileType,
         });
