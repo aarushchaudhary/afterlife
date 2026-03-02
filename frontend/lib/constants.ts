@@ -4,6 +4,14 @@ import abiJson from './AfterlifeVault.arc56.json';
 
 export const ALGORAND_APP_ID = 756429590;
 
+// frontend/lib/constants.ts additions
+
+// The URL of the Lambda Function you created to start the EC2
+export const LAMBDA_WAKE_URL = process.env.NEXT_PUBLIC_LAMBDA_WAKE_URL || 'https://tywmfy7l2o5kskdhzadfdgrbei0acwlf.lambda-url.ap-south-1.on.aws/';
+
+// The Public IP or DNS of your EC2 (Elastic IP)
+export const ORACLE_API_URL = process.env.NEXT_PUBLIC_ORACLE_URL || 'http://13.233.210.171:8000';
+
 export const ALGORAND_NODE_URL = 'https://testnet-api.algonode.cloud';
 export const ALGORAND_NODE_PORT = 443;
 export const ALGORAND_NODE_TOKEN = '';

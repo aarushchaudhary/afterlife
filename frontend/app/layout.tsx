@@ -26,6 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en">
+      <head>
+        <title>Afterlife Protocol</title>
+      </head>
       <body className="bg-slate-950 text-white">
         <WalletProvider manager={walletManager}>
           {children}

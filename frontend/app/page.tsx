@@ -41,7 +41,7 @@ function OracleStatusCard() {
   const [status, setStatus] = useState<'online' | 'offline' | 'checking'>('checking');
   useEffect(() => {
     const checkOracle = async () => {
-      try { const res = await fetch('http://localhost:8000/health'); setStatus(res.ok ? 'online' : 'offline'); }
+      try { const res = await fetch(`${process.env.NEXT_PUBLIC_ORACLE_URL || 'http://13.233.210.171:8000'}/health`); setStatus(res.ok ? 'online' : 'offline'); }
       catch { setStatus('offline'); }
     };
     checkOracle(); const int = setInterval(checkOracle, 5000); return () => clearInterval(int);
