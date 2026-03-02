@@ -5,7 +5,8 @@ import { useWallet } from '@txnlab/use-wallet-react';
 import algosdk from 'algosdk';
 import { ALGORAND_APP_ID, algodClient, getABIContract, encodeVaultBoxKey } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
-import { User, Shield, Database, FileText, AlertOctagon, Activity, ShieldAlert, Scale, Plus, Trash2 } from 'lucide-react';
+import { User, Shield, Database, FileText, AlertOctagon, Activity, ShieldAlert, Scale, Plus, Trash2, Key, ShieldCheck, Play, XCircle, Info, Send, Terminal } from 'lucide-react';
+import WalletConnectButton from '@/components/WalletConnectButton';
 import CountdownClock from '@/components/CountdownClock';
 
 // ---------- helpers to decode box data ----------
@@ -37,52 +38,6 @@ function decodeVaultBox(data: Uint8Array): VaultState {
         govApproved: flags.b3,
         verifierApproved: flags.b4,
     };
-}
-
-// ---------- Wallet Connect Button ----------
-function WalletConnectButton() {
-    const { wallets, activeAddress } = useWallet();
-
-    const handleConnect = async () => {
-        if (wallets.length > 0) {
-            try {
-                await wallets[0].connect();
-            } catch (err) {
-                console.warn("Wallet connect error, retrying...", err);
-                try {
-                    await wallets[0].disconnect();
-                    await wallets[0].connect();
-                } catch (retryErr) {
-                    console.error("Wallet reconnect failed:", retryErr);
-                }
-            }
-        }
-    };
-
-    const handleDisconnect = async () => {
-        if (wallets.length > 0) {
-            await wallets[0].disconnect();
-        }
-    };
-
-    if (activeAddress) {
-        return (
-            <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-slate-400 bg-black/40 px-3 py-2 rounded-xl border border-white/10 truncate max-w-[180px]">
-                    {activeAddress.slice(0, 4)}...{activeAddress.slice(-4)}
-                </span>
-                <button onClick={handleDisconnect} className="px-4 py-2 text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl border border-red-500/30 transition-all">
-                    Disconnect
-                </button>
-            </div>
-        );
-    }
-
-    return (
-        <button onClick={handleConnect} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
-            Connect Pera Wallet
-        </button>
-    );
 }
 
 // ---------- Main Page ----------
@@ -200,7 +155,7 @@ export default function UserPortal() {
 
             if (file && activeAddress) {
                 const fileExt = file.name.split('.').pop();
-                const filePath = `${activeAddress.toLowerCase()}/legacy_document.${fileExt}`;
+                const filePath = `${activeAddress}/legacy_document.${fileExt}`;
                 const { error: uploadError } = await supabase.storage.from('vault_files').upload(filePath, file, { upsert: true });
                 if (uploadError) throw uploadError;
                 const { data: urlData } = supabase.storage.from('vault_files').getPublicUrl(filePath);
@@ -208,8 +163,8 @@ export default function UserPortal() {
             }
 
             const { error: dbError } = await supabase.from('vault_secrets').upsert([{
-                owner_wallet: activeAddress?.toLowerCase(),
-                beneficiary_wallets: heirs.map(h => h.wallet.toLowerCase()),
+                owner_wallet: activeAddress,
+                beneficiary_wallets: heirs.map(h => h.wallet),
                 encrypted_note: secretNote, file_url: finalFileUrl, status: 'active'
             }]);
             if (dbError) throw dbError;

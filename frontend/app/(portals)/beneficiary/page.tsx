@@ -7,6 +7,7 @@ import { ALGORAND_APP_ID, algodClient, getABIContract, encodeVaultBoxKey } from 
 import { supabase } from '@/lib/supabase';
 import { Key, Lock, Unlock, ShieldCheck, Terminal } from 'lucide-react';
 import CountdownClock from '@/components/CountdownClock';
+import WalletConnectButton from '@/components/WalletConnectButton';
 
 // ---------- decode box ----------
 interface VaultFlags {
@@ -24,27 +25,10 @@ function decodeVaultFlags(data: Uint8Array): VaultFlags {
     };
 }
 
-// ---------- Wallet Connect Button ----------
-function WalletConnectButton() {
-    const { wallets, activeAddress } = useWallet();
-    if (activeAddress) {
-        return (
-            <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-slate-400 bg-black/40 px-3 py-2 rounded-xl border border-white/10 truncate max-w-[180px]">
-                    {activeAddress.slice(0, 4)}...{activeAddress.slice(-4)}
-                </span>
-                <button onClick={() => wallets[0]?.disconnect()} className="px-4 py-2 text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl border border-red-500/30 transition-all">Disconnect</button>
-            </div>
-        );
-    }
-    return (
-        <button onClick={async () => { try { await wallets[0]?.connect(); } catch { await wallets[0]?.disconnect(); await wallets[0]?.connect(); } }} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
-    );
-}
 
 // ---------- Main Page ----------
 export default function BeneficiaryPortal() {
-    const { activeAddress, transactionSigner } = useWallet();
+    const { activeAddress } = useWallet();
     const isConnected = !!activeAddress;
 
     const [searchAddress, setSearchAddress] = useState('');
@@ -73,23 +57,64 @@ export default function BeneficiaryPortal() {
         }
     }, [secretNote, decrypting]);
 
-    // Read vault from box storage
+    // Read vault from box storage & Authenticate Beneficiary
     const fetchVault = useCallback(async () => {
-        if (!searchAddress || searchAddress.length < 58) { setVaultFlags(null); return; }
+        if (!searchAddress || searchAddress.length < 58) {
+            setVaultFlags(null);
+            setIsBeneficiary(false);
+            return;
+        }
+
         try {
             const boxKey = encodeVaultBoxKey(searchAddress);
             const boxResponse = await algodClient.getApplicationBoxByName(ALGORAND_APP_ID, boxKey).do();
-            setVaultFlags(decodeVaultFlags(boxResponse.value));
-        } catch {
-            setVaultFlags(null);
-        }
-    }, [searchAddress]);
 
-    useEffect(() => { fetchVault(); }, [fetchVault]);
+            // 1. Decode the flags (for the UI locks)
+            setVaultFlags(decodeVaultFlags(boxResponse.value));
+
+            // 2. Decode the FULL vault exactly like the Python Oracle does
+            const vaultTupleType = algosdk.ABIType.from(
+                "(bool,bool,bool,bool,bool,address,address,address,(address,uint64)[])"
+            );
+
+            const decodedVault = vaultTupleType.decode(boxResponse.value) as any[];
+
+            // Index 8 is the beneficiaries array: (address,uint64)[]
+            const beneficiariesArray = decodedVault[8] as [string, bigint][];
+
+            // 3. Check if the active connected wallet is in this array
+            if (activeAddress) {
+                // Ensure case-insensitive comparison for robustness
+                const currentWallet = activeAddress.toUpperCase();
+                const isFound = beneficiariesArray.some((target) => target[0].toUpperCase() === currentWallet);
+                setIsBeneficiary(isFound);
+            } else {
+                setIsBeneficiary(false);
+            }
+
+        } catch (err: any) {
+            // Gracefully handle "Box not found" (404) as a valid state (no vault)
+            const is404 = err?.status === 404 || err?.message?.includes("box not found");
+
+            if (!is404) {
+                console.error("Failed to fetch or decode vault box:", err);
+            }
+
+            setVaultFlags(null);
+            setIsBeneficiary(false);
+        }
+    }, [searchAddress, activeAddress]);
+
+    useEffect(() => {
+        fetchVault();
+    }, [fetchVault]);
 
     // Fetch initiated_at from Supabase for the countdown
     useEffect(() => {
-        if (!searchAddress || searchAddress.length < 58) { setInitiatedAt(0); return; }
+        if (!searchAddress || searchAddress.length < 58) {
+            setInitiatedAt(0);
+            return;
+        }
         (async () => {
             try {
                 const { data } = await supabase.from('verification_queue').select('initiated_at').eq('owner_wallet', searchAddress).single();
@@ -98,53 +123,11 @@ export default function BeneficiaryPortal() {
                 } else {
                     setInitiatedAt(0);
                 }
-            } catch { setInitiatedAt(0); }
+            } catch {
+                setInitiatedAt(0);
+            }
         })();
     }, [searchAddress, vaultFlags]);
-
-    // Check if current user is a beneficiary using ATC simulate
-    const checkBeneficiary = useCallback(async () => {
-        if (!activeAddress || !searchAddress || searchAddress.length < 58) { setIsBeneficiary(false); return; }
-        try {
-            const contract = getABIContract();
-            const method = contract.getMethodByName('get_beneficiaries');
-            const suggestedParams = await algodClient.getTransactionParams().do();
-            const ownerPubKey = algosdk.decodeAddress(searchAddress).publicKey;
-            const boxKey = encodeVaultBoxKey(searchAddress);
-
-            const dummySigner: algosdk.TransactionSigner = async (txnGroup, indexesToSign) => {
-                return indexesToSign.map(() => new Uint8Array(64));
-            };
-
-            const atc = new algosdk.AtomicTransactionComposer();
-            atc.addMethodCall({
-                appID: ALGORAND_APP_ID,
-                method,
-                methodArgs: [ownerPubKey],
-                sender: activeAddress,
-                signer: dummySigner,
-                suggestedParams,
-                boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
-            });
-
-            const result = await atc.simulate(algodClient);
-            const returnValue = result.methodResults[0]?.returnValue;
-
-            if (returnValue && Array.isArray(returnValue)) {
-                const found = returnValue.some((entry: any) => {
-                    const addr = algosdk.encodeAddress(entry[0] as Uint8Array);
-                    return addr.toLowerCase() === activeAddress.toLowerCase();
-                });
-                setIsBeneficiary(found);
-            } else {
-                setIsBeneficiary(false);
-            }
-        } catch {
-            setIsBeneficiary(false);
-        }
-    }, [activeAddress, searchAddress]);
-
-    useEffect(() => { checkBeneficiary(); }, [checkBeneficiary]);
 
     const handleClaim = async () => {
         if (!activeAddress || !vaultFlags) return;
@@ -158,11 +141,14 @@ export default function BeneficiaryPortal() {
         setDecrypting(true);
 
         try {
+            // Set the x-user-wallet header for RLS
+            (supabase as any).rest.headers.set('x-user-wallet', activeAddress);
+
             const { data, error } = await supabase
                 .from('vault_secrets')
                 .select('encrypted_note, file_url')
-                .ilike('owner_wallet', searchAddress)
-                .contains('beneficiary_wallets', [activeAddress.toLowerCase()])
+                .eq('owner_wallet', searchAddress)
+                .contains('beneficiary_wallets', [activeAddress])
                 .limit(1);
 
             if (error) throw error;
@@ -179,7 +165,8 @@ export default function BeneficiaryPortal() {
                 setLoading(false);
             }, 2000);
 
-        } catch {
+        } catch (err) {
+            console.error("Database Error:", err);
             alert("Database Error: Could not retrieve the legacy note.");
             setLoading(false);
             setDecrypting(false);

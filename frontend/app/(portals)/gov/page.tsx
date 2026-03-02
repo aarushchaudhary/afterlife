@@ -7,6 +7,7 @@ import { ALGORAND_APP_ID, algodClient, getABIContract, encodeVaultBoxKey } from 
 import { supabase } from '@/lib/supabase';
 import { Search, ShieldAlert, RefreshCw, CheckCircle } from 'lucide-react';
 import CountdownClock from '@/components/CountdownClock';
+import WalletConnectButton from '@/components/WalletConnectButton';
 
 // ---------- decode box ----------
 interface VaultFlags {
@@ -28,23 +29,6 @@ function decodeVaultFlags(data: Uint8Array): VaultFlags {
     };
 }
 
-// ---------- Wallet Connect Button ----------
-function WalletConnectButton() {
-    const { wallets, activeAddress } = useWallet();
-    if (activeAddress) {
-        return (
-            <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-slate-400 bg-black/40 px-3 py-2 rounded-xl border border-white/10 truncate max-w-[180px]">
-                    {activeAddress.slice(0, 4)}...{activeAddress.slice(-4)}
-                </span>
-                <button onClick={() => wallets[0]?.disconnect()} className="px-4 py-2 text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl border border-red-500/30 transition-all">Disconnect</button>
-            </div>
-        );
-    }
-    return (
-        <button onClick={async () => { try { await wallets[0]?.connect(); } catch { await wallets[0]?.disconnect(); await wallets[0]?.connect(); } }} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
-    );
-}
 
 // ---------- Main Page ----------
 export default function GovernmentDashboard() {
