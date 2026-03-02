@@ -1,19 +1,40 @@
+import os
+import algokit_utils
 from algosdk.v2client import algod
 from algosdk.transaction import PaymentTxn
-import algokit_utils
+from dotenv import load_dotenv
 
-# 1. Connect to your LocalNet
-algod_client = algod.AlgodClient("a" * 64, "http://localhost:4001")
+load_dotenv()
 
-# 2. Get the LocalNet Dispenser (the account with unlimited fake ALGOs)
-dispenser = algokit_utils.get_localnet_default_account(algod_client)
-target_address = "B7LDQMBWOSX56AH2AI65ZSZYMECI25L22YM76F35D5T3TYQETMWQGA6QD4"
+# 1. Configuration
+# Your Testnet/LocalNet address from .env or manual entry
+TARGET_ADDRESS = "5QFX5GTR43LHTYRKDPASITAFJKXHF6HA7HIUVZQD2VZCDEA75GN3BXGG6M"
+ALGOD_URL = "http://localhost:4001"
+ALGOD_TOKEN = "a" * 64
 
-# 3. Build and send a transaction for 10 ALGO (10,000,000 microAlgos)
-sp = algod_client.suggested_params()
-txn = PaymentTxn(dispenser.address, sp, target_address, 10_000_000)
-signed_txn = txn.sign(dispenser.private_key)
-txid = algod_client.send_transaction(signed_txn)
+def fund_localnet():
+    try:
+        algod_client = algod.AlgodClient(ALGOD_TOKEN, ALGOD_URL)
+        # Check if LocalNet is actually running
+        algod_client.health()
+        
+        dispenser = algokit_utils.get_localnet_default_account(algod_client)
+        sp = algod_client.suggested_params()
+        
+        # Fund 100 ALGO (100,000,000 microAlgos)
+        txn = PaymentTxn(dispenser.address, sp, TARGET_ADDRESS, 100_000_000)
+        signed_txn = txn.sign(dispenser.private_key)
+        txid = algod_client.send_transaction(signed_txn)
+        
+        print(f"✅ Successfully sent 100 ALGO to {TARGET_ADDRESS} on LocalNet!")
+        print(f"🔗 Transaction ID: {txid}")
+    except Exception as e:
+        print(f"❌ LocalNet funding failed: {e}")
+        print("\n💡 TIP: If you are trying to fund TESTNET, visit:")
+        print("   https://bank.testnet.algorand.network/")
+        print(f"   and paste your address: {TARGET_ADDRESS}")
 
-print(f"✅ Successfully sent 10 ALGO to {target_address}!")
-print(f"🔗 Transaction ID: {txid}")
+if __name__ == "__main__":
+    print(f"🏦 Afterlife Funding Tool")
+    print(f"📍 Target Address: {TARGET_ADDRESS}\n")
+    fund_localnet()

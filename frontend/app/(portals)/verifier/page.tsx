@@ -62,7 +62,7 @@ export default function VerifierDashboard() {
     useEffect(() => { setMounted(true); fetchQueue(); }, []);
 
     const fetchQueue = async () => {
-        const { data } = await supabase.from('verification_queue').select('*').eq('status', 'pending_verifier');
+        const { data } = await supabase.from('verification_queue').select('*').eq('status', 'initiated');
         if (data) setQueue(data);
     };
 

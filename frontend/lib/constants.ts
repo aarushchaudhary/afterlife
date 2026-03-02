@@ -2,7 +2,7 @@
 import algosdk from 'algosdk';
 import abiJson from './AfterlifeVault.arc56.json';
 
-export const ALGORAND_APP_ID = 756414934;
+export const ALGORAND_APP_ID = 756429590;
 
 export const ALGORAND_NODE_URL = 'https://testnet-api.algonode.cloud';
 export const ALGORAND_NODE_PORT = 443;
