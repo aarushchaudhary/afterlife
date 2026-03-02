@@ -7,7 +7,7 @@ export const ALGORAND_APP_ID = 756429590;
 // frontend/lib/constants.ts additions
 
 // The URL of the Lambda Function you created to start the EC2
-export const LAMBDA_WAKE_URL = process.env.NEXT_PUBLIC_LAMBDA_WAKE_URL || 'https://tywmfy7l2o5kskdhzadfdgrbei0acwlf.lambda-url.ap-south-1.on.aws/';
+export const LAMBDA_WAKE_URL = '/api/wake-oracle';
 
 // The relative URL to proxy requests to the Oracle API through Next.js
 export const ORACLE_API_URL = process.env.NEXT_PUBLIC_NEXT_ORACLE_URL || '/api/oracle';
