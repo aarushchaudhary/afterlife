@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Add this to prevent Next.js from mangling the AWS SDK imports
+  serverExternalPackages: [
+    '@aws-sdk/client-s3',
+    '@aws-sdk/s3-request-presigner'
+  ],
+
   async rewrites() {
     return [
       {
