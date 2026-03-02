@@ -2,14 +2,15 @@
 
 **Decentralized Digital Legacy & Multi-Sig Inheritance System**
 
-Afterlife Protocol is a secure, automated system for transferring digital assets and sensitive information to beneficiaries. It combines the trustless nature of **Polygon Blockchain** with the scalability of **Supabase** and the real-time monitoring of a **Python Oracle**.
+Afterlife Protocol is a secure, automated system for transferring digital assets and sensitive information to beneficiaries. It combines the trustless nature of the **Algorand Blockchain** with the scalability of **AWS (RDS & S3)** and the real-time monitoring of a **Python Oracle** on EC2.
 
 ## 💻 Tech Stack
 
 * **Frontend:** Next.js 15, Tailwind CSS, Lucide React.
-* **Web3:** Wagmi, Viem, RainbowKit, Solidity.
-* **Backend/Storage:** Supabase, Python (Web3.py).
-* **Network:** Polygon Amoy Testnet.
+* **Web3:** `algosdk`, PeraWallet, Defly, Lute, Python Smart Contracts (Puya).
+* **Backend/Storage:** AWS RDS (PostgreSQL), AWS S3, AWS Lambda.
+* **Oracle:** Built in Python (FastAPI), running on AWS EC2, indexing Algorand Application calls.
+* **Network:** Algorand Testnet / LocalNet.
 
 ## 🛠️ The Multi-Sig Execution Flow
 
@@ -23,169 +24,138 @@ Afterlife Protocol is a secure, automated system for transferring digital assets
 
 ## 🏗️ System Architecture & Data Flow
 
-The Afterlife Protocol utilizes a hybrid Web2/Web3 architecture. State changes are strictly enforced on the Polygon Amoy blockchain, while a real-time Python Oracle indexes these events to trigger off-chain metadata updates in Supabase.
+The Afterlife Protocol utilizes a hybrid Web2/Web3 architecture. State changes are strictly enforced on the Algorand blockchain, while a real-time Python Oracle indexes these application calls to trigger off-chain metadata updates in AWS RDS.
 
 ```mermaid
 sequenceDiagram
     autonumber
     
-    actor User as Citizen (MetaMask)
+    actor User as Citizen (Pera Wallet)
     participant UI as Next.js Frontend
-    participant DB as Supabase (DB & Storage)
-    participant SC as Polygon Contract
-    participant Oracle as Python Oracle
+    participant DB as AWS (S3 & RDS)
+    participant SC as Algorand Contract
+    participant Oracle as Python Oracle (EC2)
     actor Auth as Designated Authorities
     actor Heir as Beneficiary
 
     rect rgb(30, 41, 59)
     note right of User: Phase 1: Secure Registration
     User->>UI: Enter Heirs, Percentages & Legacy File
-    UI->>DB: Encrypt & upload file to `vault_files` bucket
-    DB-->>UI: Return file URL
-    UI->>DB: Save `encrypted_note` & `file_url`
-    UI->>User: Request MetaMask Signature
-    User->>SC: `createVault(heirs, percentages, hospital, gov, verifier)`
-    SC-->>Oracle: Emit `VaultCreated` Event
+    UI->>DB: Encrypt & upload file to S3 Bucket
+    DB-->>UI: Return S3 object key
+    UI->>DB: Save `encrypted_note` & S3 `file_url` into RDS
+    UI->>User: Request Pera Wallet Signature
+    User->>SC: `create_vault(...)`
+    SC-->>Oracle: Algorand Indexer detects transaction
     Oracle->>DB: Insert owner into `verification_queue` (Status: Active)
     end
 
     rect rgb(69, 10, 10)
     note right of User: Phase 2: Emergency Protocol
-    Auth->>SC: Hospital calls `initiateDeath(owner)`
-    SC-->>Oracle: Emit `ProtocolInitiated` Event
+    Auth->>SC: Hospital calls `initiate_death(owner)`
+    SC-->>Oracle: Indexer detects `initiate_death`
     Oracle->>DB: Update queue to `status: initiated`
     end
 
     rect rgb(6, 78, 59)
     note right of User: Phase 3: Hybrid Consensus
-    Auth->>SC: Gov / Verifier call `approveDeath(owner)`
-    SC-->>Oracle: Emit `AssetsUnlocked` (if 3/3 consensus reached)
-    Oracle->>DB: Update queue to `status: unlocked`
+    Auth->>SC: Gov / Verifier call `approve_death(owner)`
+    SC-->>Oracle: Indexer detects `approve_death` (3/3 local box state unlocked)
+    Oracle->>DB: Update queue & vault_secrets to `status: unlocked`
     end
 
     rect rgb(88, 28, 135)
     note right of User: Phase 4: Beneficiary Claim
     Heir->>UI: Connect Wallet & Request Claim
-    UI->>SC: Check `isUnlocked` & `getBeneficiaries`
+    UI->>SC: Check Application Box for Unlocked Status
     SC-->>UI: Confirm Access Granted
-    UI->>DB: Query `vault_secrets` for payload
+    UI->>DB: Query AWS RDS `vault_secrets` for payload
     DB-->>UI: Return `encrypted_note` & `file_url`
-    UI-->>Heir: Render Decrypted Vault & Download Link
+    UI-->>Heir: Render Decrypted Vault & Generate S3 Presigned URL
     end
 ```
 
-> 📁 **API Documentation:** The Oracle's OpenAPI spec is available at [`docs/openapi.json`](docs/openapi.json). Run the oracle locally and visit `http://localhost:8000/docs` for the interactive Swagger UI.
+> 📁 **API Documentation:** The Oracle's OpenAPI spec is available at [`docs/openapi.json`](docs/openapi.json). Run the oracle locally or on EC2 and visit `/docs` for the interactive Swagger UI.
 
 ## ⚙️ Setup & Configuration
 
-### 1. Polygon Amoy Setup (Smart Contract)
+### 1. Algorand Setup (Smart Contract)
 
-The backbone of the protocol is the `AfterlifeVault.sol` contract deployed on the **Polygon Amoy Testnet**.
+The backbone of the protocol is the Algorand Smart Contract built with **AlgoKit & Python (Puya)**.
 
-* **Deployment:** Use Remix or Hardhat to deploy to `80002`.
-* **Gas Configuration:** Polygon Amoy requires a minimum tip of **25 Gwei**. Ensure your frontend calls include `maxPriorityFeePerGas: parseGwei('30')` and `maxFeePerGas: parseGwei('40')`.
-* **Contract Address:** Once deployed, update `frontend/lib/constants.ts` with your new address and the environment variable `NEXT_PUBLIC_CONTRACT_ADDRESS`.
+* **Deployment:** Use `algokit` to compile and deploy to LocalNet or Testnet.
+* **Environment:** Update `frontend/lib/constants.ts` with your deployed `ALGORAND_APP_ID`.
 
-### 2. Supabase Setup (Off-Chain Storage)
+### 2. AWS Setup (Database & Storage)
 
-Supabase handles the private "Legacy Note" that is too heavy and sensitive for the blockchain.
+AWS handles the private "Legacy Note" that is too heavy and sensitive for the blockchain.
 
-**Table Schema: `vault_secrets`**
+**Table Schema (PostgreSQL on AWS RDS)**
 
-Create a new table in your Supabase dashboard with the following structure:
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `owner_wallet` | `text` | The address of the deceased (lowercase) |
-| `beneficiary_wallet` | `text` | The address of the recipient (lowercase) |
-| `encrypted_note` | `text` | The actual legacy data/message |
-| `status` | `text` | 'active' or 'unlocked' |
+Create tables using the provided schemas:
+* `roles (wallet_address, role)`
+* `vault_secrets (owner_wallet, beneficiary_wallets[], encrypted_note, file_url, status, created_at)`
+* `verification_queue (owner_wallet, status, initiated_at)`
 
-**Row Level Security (RLS)**
+**S3 Storage (Files)**
 
-For the demo, you must either:
-1. **Disable RLS:** Run `ALTER TABLE vault_secrets DISABLE ROW LEVEL SECURITY;` in the SQL Editor.
-2. **Add Policy:** Create an "Enable Insert/Select for all" policy to allow the Next.js app to push and pull data without a service role key.
+* Configure an S3 Bucket with appropriate IAM roles to allow bucket uploads (multipart via presigned URLs if needed) and downloads.
 
-### 3. WalletConnect & RainbowKit Setup
+### 3. Wallet Setup
 
-We use **RainbowKit** to bridge the browser to the **MetaMask Mobile App**.
+We use **@txnlab/use-wallet** for connecting directly using **Pera Wallet**, **Defly**, and **Lute**.
 
-* **Project ID:** Register at [WalletConnect Cloud Dashboard](https://cloud.walletconnect.com/) to get a Project ID. This is required for QR code scanning on mobile devices.
-* **Mobile Troubleshooting:** If the mobile app fails to trigger a popup, ensure you are using **Legacy Gas Prices** or manually overriding the gas tip to **30 Gwei** within the MetaMask app settings.
+### 4. Python Oracle
 
-### 4. Python Oracle Setup
-
-The Oracle acts as the "Timekeeper" that monitors the blockchain for the `DeathInitiated` event.
-
-1. **Dependencies:** `pip install web3 python-dotenv`
-2. **Provider:** Use an **Alchemy** or **Infura** WSS/HTTP RPC URL.
-3. **Function:** The script listens for the Hospital's trigger and starts a 72-hour countdown. If the owner does not "Check-in" (cancel) during this window, the Oracle prepares the system for multi-sig unlocking.
+The Oracle runs on **AWS EC2** and is awakened by **AWS Lambda** when needed.
+1. **Dependencies:** `pip install fastapi psycopg2-binary algosdk python-dotenv uvicorn`
+2. **Provider:** Connects to standard **Algorand Indexers** (`testnet-idx.algonode.cloud`).
+3. **Function:** Indexes application transactions and syncs the multi-sig approval states to AWS RDS.
 
 ## 📄 Environment Variables
 
-You will need to set up environment variables for the different components of the protocol.
-
-### 1. Contracts (`contracts/.env`)
-
-Create a `.env` file in the `contracts` directory for deploying the smart contract.
+### 1. Frontend (`frontend/.env.local` or `.env`)
 
 ```env
-# Your EVM wallet private key for deployment
-export PRIVATE_KEY=your_private_key_here
+# --- AWS CONFIG ---
+AWS_REGION=ap-south-1
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+S3_BUCKET_NAME=your_bucket_name
+DATABASE_URL=postgres://user:password@rdshost:5432/dbname
 
-# Polygon Amoy RPC URL
-export AMOY_RPC_URL=https://rpc-amoy.polygon.technology
+# --- ORACLE / AWS LAMBDA ---
+NEXT_PUBLIC_LAMBDA_WAKE_URL=https://<lambda-id>.lambda-url.ap-south-1.on.aws/
+NEXT_PUBLIC_ORACLE_URL=http://<ec2-ip>:8000
 ```
 
-### 2. Frontend (`frontend/.env.local`)
-
-Create a `.env.local` file in the `frontend` directory. This keeps your API keys secure and accessible to Wagmi and Supabase.
+### 2. Python Oracle (`oracle/.env`)
 
 ```env
-# --- WALLETCONNECT CONFIG ---
-# Get this from https://cloud.walletconnect.com/
-NEXT_PUBLIC_WC_PROJECT_ID=your_project_id_here
+# Algorand Testnet Indexer URL
+INDEXER_URL=https://testnet-idx.algonode.cloud
+INDEXER_TOKEN=
 
-# --- SUPABASE CONFIG ---
-# Get these from Settings -> API in your Supabase Dashboard
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_public_key_here
+# The App ID of the deployed Algorand Contract
+ALGORAND_APP_ID=756429590
 
-# --- BLOCKCHAIN CONFIG ---
-# The address of your deployed AfterlifeVault contract
-NEXT_PUBLIC_CONTRACT_ADDRESS=0xF07b3D064c9aad3328975c4655CCC6e9cD746cc2
-
-# (Optional) Alchemy/Infura RPC URL for faster data fetching
-# While Wagmi provides default public RPCs, using a private one from Alchemy will prevent "Rate Limit" errors.
-NEXT_PUBLIC_AMOY_RPC_URL=https://polygon-amoy.g.alchemy.com/v2/your_alchemy_key
+# AWS RDS Connection
+DATABASE_URL=postgres://user:password@rdshost:5432/dbname
 ```
 
-### 3. Python Oracle (`oracle/.env`)
+## 🚰 Faucets: How to get Free Algorand Testnet ALGO
 
-Create a `.env` file in the `oracle` directory.
+Since you are testing a multi-sig with 4 different accounts, you'll need gas for all. Use these faucets to fund your Pera/Defly wallets:
 
-```env
-# Polygon Amoy RPC URL
-AMOY_RPC_URL=https://rpc-amoy.polygon.technology
+1. **[Algorand Bank Faucet](https://bank.testnet.algorand.network/):** The official faucet.
+2. **[AlgoNode Dispenser](https://dispenser.testnet.aws.algodev.network/):** Great reliable backup.
 
-# The address of your deployed AfterlifeVault contract
-CONTRACT_ADDRESS=0xF07b3D064c9aad3328975c4655CCC6e9cD746cc2
-```
-
-## 🚰 Faucets: How to get Free Amoy POL
-
-Since you are testing a multi-sig with 4 different accounts, you'll need gas in all of them. Use these faucets:
-
-1. **[Alchemy Amoy Faucet](https://www.alchemy.com/faucets/polygon-amoy):** The most reliable. You need an Alchemy account, but it gives you **0.1 POL** daily.
-2. **[Polygon Faucet](https://faucet.polygon.technology/):** The official faucet. Select "Amoy" and "POL Token."
-3. **[Chainstack Faucet](https://faucet.chainstack.com/polygon-amoy-faucet):** A backup if the others are empty.
-
-> **Pro-Tip:** Once you get POL in **Account 1**, "Send" **0.02 POL** to Accounts 2, 3, and 4 inside MetaMask. That is more than enough for 10+ test transactions each.
+> **Pro-Tip:** Fund **Account 1** with test ALGO, then distribute minimum balances to the Hospital, Gov, and Verifier wallets to cover transaction fees.
 
 ## 🚀 Final Checklist Before Demo
 
-* [ ] **Account 1 (Owner):** Has ~0.05 POL.
-* [ ] **Account 3 (Gov):** Has ~0.02 POL.
-* [ ] **Account 4 (Verifier):** Has ~0.02 POL.
-* [ ] **Supabase:** Table `vault_secrets` exists and RLS is disabled (`ALTER TABLE... DISABLE RLS`).
+* [ ] **Account 1 (Owner):** Funded with Testnet ALGO.
+* [ ] **Account 3 (Gov) & Account 4 (Verifier):** Funded for approval transactions.
+* [ ] **AWS S3 & RDS:** Configured and `DATABASE_URL` is correct.
+* [ ] **Oracle EC2 / Lambda:** Running and accessible.
 * [ ] **Local Server:** Running on `localhost:3000`.
