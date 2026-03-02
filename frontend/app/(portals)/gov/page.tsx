@@ -1,63 +1,120 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useWriteContract, useReadContract, useAccount } from 'wagmi';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { parseGwei } from 'viem';
-import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
+import { useState, useEffect, useCallback } from 'react';
+import { useWallet } from '@txnlab/use-wallet-react';
+import algosdk from 'algosdk';
+import { ALGORAND_APP_ID, algodClient, getABIContract, encodeVaultBoxKey } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { Search, ShieldAlert, RefreshCw, CheckCircle } from 'lucide-react';
 import CountdownClock from '@/components/CountdownClock';
 
+// ---------- decode box ----------
+interface VaultFlags {
+    isActive: boolean;
+    isUnlocked: boolean;
+    hospitalApproved: boolean;
+    govApproved: boolean;
+    verifierApproved: boolean;
+}
+
+function decodeVaultFlags(data: Uint8Array): VaultFlags {
+    const b = data[0];
+    return {
+        isActive: !!(b & 0x80),
+        isUnlocked: !!(b & 0x40),
+        hospitalApproved: !!(b & 0x20),
+        govApproved: !!(b & 0x10),
+        verifierApproved: !!(b & 0x08),
+    };
+}
+
+// ---------- Wallet Connect Button ----------
+function WalletConnectButton() {
+    const { wallets, activeAddress } = useWallet();
+    if (activeAddress) {
+        return (
+            <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-slate-400 bg-black/40 px-3 py-2 rounded-xl border border-white/10 truncate max-w-[180px]">
+                    {activeAddress.slice(0, 4)}...{activeAddress.slice(-4)}
+                </span>
+                <button onClick={() => wallets[0]?.disconnect()} className="px-4 py-2 text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl border border-red-500/30 transition-all">Disconnect</button>
+            </div>
+        );
+    }
+    return (
+        <button onClick={() => wallets[0]?.connect()} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
+    );
+}
+
+// ---------- Main Page ----------
 export default function GovernmentDashboard() {
-    const { isConnected } = useAccount();
+    const { activeAddress, transactionSigner } = useWallet();
+    const isConnected = !!activeAddress;
+
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedWallet, setSelectedWallet] = useState('');
     const [queue, setQueue] = useState<any[]>([]);
     const [mounted, setMounted] = useState(false);
-    const { writeContractAsync, isPending } = useWriteContract();
+    const [isPending, setIsPending] = useState(false);
+    const [vaultFlags, setVaultFlags] = useState<VaultFlags | null>(null);
 
     useEffect(() => { setMounted(true); fetchQueue(); }, []);
 
     const fetchQueue = async () => {
-        // Gov sees "initiated" patients waiting for state approval
         const { data } = await supabase.from('verification_queue').select('*').eq('status', 'initiated');
         if (data) setQueue(data);
     };
 
-    const { data: vault, refetch: refetchBlockchain } = useReadContract({
-        address: AFTERLIFE_CONTRACT_ADDRESS,
-        abi: AFTERLIFE_ABI,
-        functionName: 'vaults',
-        args: [selectedWallet as `0x${string}`],
-        query: { enabled: selectedWallet.length === 42 }
-    });
+    const fetchVault = useCallback(async () => {
+        if (!selectedWallet) { setVaultFlags(null); return; }
+        try {
+            const boxKey = encodeVaultBoxKey(selectedWallet);
+            const boxResponse = await algodClient.getApplicationBoxByName(ALGORAND_APP_ID, boxKey).do();
+            setVaultFlags(decodeVaultFlags(boxResponse.value));
+        } catch {
+            setVaultFlags(null);
+        }
+    }, [selectedWallet]);
+
+    useEffect(() => { fetchVault(); }, [fetchVault]);
 
     const handleApprove = async () => {
         if (!isConnected || !selectedWallet) return;
         try {
-            const tx = await writeContractAsync({
-                address: AFTERLIFE_CONTRACT_ADDRESS,
-                abi: AFTERLIFE_ABI,
-                functionName: 'approveDeath',
-                args: [selectedWallet as `0x${string}`],
-                maxPriorityFeePerGas: parseGwei('30'),
-                maxFeePerGas: parseGwei('40'),
+            setIsPending(true);
+            const contract = getABIContract();
+            const method = contract.getMethodByName('approve_death');
+            const suggestedParams = await algodClient.getTransactionParams().do();
+
+            const ownerPubKey = algosdk.decodeAddress(selectedWallet).publicKey;
+            const boxKey = encodeVaultBoxKey(selectedWallet);
+
+            const atc = new algosdk.AtomicTransactionComposer();
+            atc.addMethodCall({
+                appID: ALGORAND_APP_ID,
+                method,
+                methodArgs: [ownerPubKey],
+                sender: activeAddress!,
+                signer: transactionSigner,
+                suggestedParams,
+                boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
             });
-            if (tx) {
-                alert("🏛️ Government Verification Confirmed.");
-                refetchBlockchain();
-                // Optionally remove from local queue immediately for UX
-                setQueue(q => q.filter(item => item.owner_wallet !== selectedWallet));
-            }
+
+            await atc.execute(algodClient, 4);
+            alert("🏛️ Government Verification Confirmed.");
+            fetchVault();
+            setQueue(q => q.filter(item => item.owner_wallet !== selectedWallet));
         } catch (err: any) {
-            alert(`Approval failed: ${err.shortMessage || err.message}`);
+            alert(`Approval failed: ${err.message}`);
+        } finally {
+            setIsPending(false);
         }
     };
 
     if (!mounted) return null;
 
     const filteredQueue = queue.filter(item => item.owner_wallet.includes(searchQuery.toLowerCase()));
+    const hasVaultData = vaultFlags?.isActive === true;
 
     return (
         <div className="min-h-screen bg-slate-950 bg-[url('/bg-pattern.svg')] text-white flex flex-col relative overflow-hidden">
@@ -70,12 +127,12 @@ export default function GovernmentDashboard() {
                             <h1 className="text-4xl font-bold text-emerald-500 flex items-center gap-3"><ShieldAlert /> Gov Approval Queue</h1>
                             <p className="text-slate-400 font-mono mt-2">Review and authorize death certificates on-chain.</p>
                         </div>
-                        <ConnectButton />
+                        <WalletConnectButton />
                     </header>
 
                     {!isConnected ? (
                         <div className="p-4 bg-yellow-900/30 border border-yellow-700 text-yellow-500 rounded text-center">
-                            Please connect your official Government wallet (Account 3).
+                            Please connect your official Government wallet.
                         </div>
                     ) : (
                         <div className="flex gap-8 flex-1 overflow-hidden">
@@ -113,26 +170,26 @@ export default function GovernmentDashboard() {
                                         <ShieldAlert size={48} className="mb-4 opacity-20" />
                                         <p>Select a case from the queue to review.</p>
                                     </div>
-                                ) : vault && (vault as any)[0] !== '0x0000000000000000000000000000000000000000' ? (
+                                ) : hasVaultData ? (
                                     <div className="space-y-6 animate-in fade-in zoom-in duration-300">
                                         <h2 className="text-2xl font-bold text-slate-100 border-b border-white/10 pb-4">State Verification</h2>
                                         <div className="p-6 bg-black/40 rounded-xl border border-white/10 backdrop-blur-md">
                                             <p className="text-slate-500 text-xs uppercase tracking-widest mb-4">Multi-Sig Consensus</p>
                                             <div className="flex gap-4">
-                                                <Badge label="Hospital" active={(vault as any)[5]} />
-                                                <Badge label="Government" active={(vault as any)[6]} />
-                                                <Badge label="Verifier" active={(vault as any)[7]} />
+                                                <Badge label="Hospital" active={vaultFlags!.hospitalApproved} />
+                                                <Badge label="Government" active={vaultFlags!.govApproved} />
+                                                <Badge label="Verifier" active={vaultFlags!.verifierApproved} />
                                             </div>
                                         </div>
-                                        {(vault as any)[5] && !(vault as any)[8] && (
+                                        {vaultFlags!.hospitalApproved && !vaultFlags!.isUnlocked && (
                                             <div className="mt-6 animate-in fade-in zoom-in duration-500">
                                                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
                                                     State Audit Time Remaining
                                                 </p>
-                                                <CountdownClock initiationTime={Number((vault as any)[4])} />
+                                                <CountdownClock initiationTime={0} />
                                             </div>
                                         )}
-                                        {!(vault as any)[6] && (vault as any)[4] > 0 && (
+                                        {!vaultFlags!.govApproved && vaultFlags!.hospitalApproved && (
                                             <button
                                                 onClick={handleApprove} disabled={isPending}
                                                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 font-bold rounded transition cursor-pointer flex justify-center items-center gap-2"

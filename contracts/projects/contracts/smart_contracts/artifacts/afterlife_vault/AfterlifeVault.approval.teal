@@ -1,0 +1,625 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 1 32 2
+    bytecblock 0x00 "vaults" 0x151f7c75
+    // smart_contracts/afterlife_vault/contract.py:30-31
+    // # 3. The Main Contract
+    // class AfterlifeVault(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@15
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0x5930d05f 0x468daa3e 0x29aa9829 0xe54bd3f1 0x599325ac 0xb484be5d // method "create_vault(address[],uint64[],address,address,address)void", method "initiate_death(address)void", method "approve_death(address)void", method "cancel_death_protocol()void", method "get_beneficiaries(address)(address,uint64)[]", method "is_vault_unlocked(address)bool"
+    txna ApplicationArgs 0
+    match create_vault initiate_death approve_death cancel_death_protocol get_beneficiaries is_vault_unlocked
+    err
+
+main___algopy_default_create@15:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// smart_contracts.afterlife_vault.contract.AfterlifeVault.create_vault[routing]() -> void:
+create_vault:
+    intc_0 // 0
+    // smart_contracts/afterlife_vault/contract.py:36
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dupn 2
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    dup
+    cover 2
+    dup
+    intc_2 // 32
+    *
+    intc_3 // 2
+    +
+    uncover 2
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.static_array<arc4.uint8, 32>>
+    txna ApplicationArgs 2
+    dup
+    cover 2
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    dup
+    cover 3
+    dup
+    pushint 8
+    *
+    intc_3 // 2
+    +
+    uncover 2
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint64>
+    txna ApplicationArgs 3
+    dup
+    cover 3
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 4
+    dup
+    cover 3
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 5
+    dup
+    cover 3
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    // smart_contracts/afterlife_vault/contract.py:46
+    // assert heir_wallets.length == percentages.length, "Arrays length mismatch"
+    ==
+    assert // Arrays length mismatch
+    // smart_contracts/afterlife_vault/contract.py:48-49
+    // # Verify percentages equal 100
+    // total_percentage = UInt64(0)
+    intc_0 // 0
+    // smart_contracts/afterlife_vault/contract.py:50
+    // for i in urange(percentages.length): # <-- CHANGED TO URANGE
+    dup
+
+create_vault_for_header@2:
+    // smart_contracts/afterlife_vault/contract.py:50
+    // for i in urange(percentages.length): # <-- CHANGED TO URANGE
+    dup
+    dig 6
+    <
+    bz create_vault_after_for@5
+    // smart_contracts/afterlife_vault/contract.py:51
+    // total_percentage += percentages[i].native
+    dig 6
+    extract 2 0
+    dig 1
+    dup
+    cover 2
+    pushint 8
+    *
+    extract_uint64
+    dig 3
+    +
+    bury 3
+    // smart_contracts/afterlife_vault/contract.py:50
+    // for i in urange(percentages.length): # <-- CHANGED TO URANGE
+    intc_1 // 1
+    +
+    bury 1
+    b create_vault_for_header@2
+
+create_vault_after_for@5:
+    // smart_contracts/afterlife_vault/contract.py:52
+    // assert total_percentage == 100, "Percentages must equal 100"
+    dig 1
+    pushint 100
+    ==
+    assert // Percentages must equal 100
+    // smart_contracts/afterlife_vault/contract.py:54-55
+    // # Construct the beneficiaries array
+    // beneficiary_list = arc4.DynamicArray[BeneficiaryTarget]()
+    pushbytes 0x0000
+    bury 10
+    // smart_contracts/afterlife_vault/contract.py:56
+    // for i in urange(heir_wallets.length): # <-- CHANGED TO URANGE
+    intc_0 // 0
+    bury 1
+
+create_vault_for_header@6:
+    // smart_contracts/afterlife_vault/contract.py:56
+    // for i in urange(heir_wallets.length): # <-- CHANGED TO URANGE
+    dup
+    dig 8
+    <
+    bz create_vault_after_for@9
+    // smart_contracts/afterlife_vault/contract.py:58
+    // wallet=heir_wallets[i],
+    dig 8
+    extract 2 0
+    dig 1
+    dup
+    cover 2
+    intc_2 // 32
+    *
+    intc_2 // 32
+    extract3 // on error: index access is out of bounds
+    // smart_contracts/afterlife_vault/contract.py:59
+    // percentage=percentages[i]
+    dig 8
+    extract 2 0
+    dig 2
+    pushint 8
+    *
+    pushint 8
+    extract3 // on error: index access is out of bounds
+    // smart_contracts/afterlife_vault/contract.py:57-60
+    // target = BeneficiaryTarget(
+    //     wallet=heir_wallets[i],
+    //     percentage=percentages[i]
+    // )
+    concat
+    // smart_contracts/afterlife_vault/contract.py:61
+    // beneficiary_list.append(target.copy())
+    dig 11
+    dup
+    uncover 2
+    concat // on error: max array length exceeded
+    swap
+    intc_0 // 0
+    extract_uint16
+    intc_1 // 1
+    +
+    itob
+    extract 6 2
+    replace2 0
+    bury 11
+    // smart_contracts/afterlife_vault/contract.py:56
+    // for i in urange(heir_wallets.length): # <-- CHANGED TO URANGE
+    intc_1 // 1
+    +
+    bury 1
+    b create_vault_for_header@6
+
+create_vault_after_for@9:
+    // smart_contracts/afterlife_vault/contract.py:63-74
+    // # Save to Box Storage (User's Vault)
+    // self.vaults[Txn.sender] = VaultData(
+    //     is_active=arc4.Bool(True),
+    //     is_unlocked=arc4.Bool(False),
+    //     hospital_approved=arc4.Bool(False),
+    //     gov_approved=arc4.Bool(False),
+    //     verifier_approved=arc4.Bool(False),
+    //     designated_hospital=arc4.Address(hospital),
+    //     designated_gov=arc4.Address(gov),
+    //     designated_verifier=arc4.Address(verifier),
+    //     beneficiaries=beneficiary_list.copy()
+    // )
+    pushbytes 0x80
+    dig 5
+    concat
+    dig 4
+    concat
+    dig 3
+    concat
+    pushbytes 0x0063
+    concat
+    dig 10
+    concat
+    // smart_contracts/afterlife_vault/contract.py:63-64
+    // # Save to Box Storage (User's Vault)
+    // self.vaults[Txn.sender] = VaultData(
+    bytec_1 // "vaults"
+    txn Sender
+    concat
+    // smart_contracts/afterlife_vault/contract.py:63-74
+    // # Save to Box Storage (User's Vault)
+    // self.vaults[Txn.sender] = VaultData(
+    //     is_active=arc4.Bool(True),
+    //     is_unlocked=arc4.Bool(False),
+    //     hospital_approved=arc4.Bool(False),
+    //     gov_approved=arc4.Bool(False),
+    //     verifier_approved=arc4.Bool(False),
+    //     designated_hospital=arc4.Address(hospital),
+    //     designated_gov=arc4.Address(gov),
+    //     designated_verifier=arc4.Address(verifier),
+    //     beneficiaries=beneficiary_list.copy()
+    // )
+    dup
+    box_del
+    pop
+    swap
+    box_put
+    // smart_contracts/afterlife_vault/contract.py:36
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// smart_contracts.afterlife_vault.contract.AfterlifeVault.initiate_death[routing]() -> void:
+initiate_death:
+    // smart_contracts/afterlife_vault/contract.py:76
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    // smart_contracts/afterlife_vault/contract.py:79
+    // vault = self.vaults[owner].copy()
+    bytec_1 // "vaults"
+    swap
+    concat
+    // smart_contracts/afterlife_vault/contract.py:79-80
+    // vault = self.vaults[owner].copy()
+    // assert vault.is_active.native, "Vault is not active"
+    dup
+    intc_0 // 0
+    intc_1 // 1
+    box_extract
+    dup
+    intc_0 // 0
+    getbit
+    // smart_contracts/afterlife_vault/contract.py:80
+    // assert vault.is_active.native, "Vault is not active"
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    assert // Vault is not active
+    // smart_contracts/afterlife_vault/contract.py:81
+    // assert Txn.sender == vault.designated_hospital.native, "Unauthorized: Not the designated hospital"
+    txn Sender
+    dig 2
+    intc_1 // 1
+    intc_2 // 32
+    box_extract
+    ==
+    assert // Unauthorized: Not the designated hospital
+    // smart_contracts/afterlife_vault/contract.py:83-84
+    // vault.hospital_approved = arc4.Bool(True)
+    // self.vaults[owner] = vault.copy() # <-- ADDED .COPY() FOR SAFE ASSIGNMENT
+    intc_3 // 2
+    // smart_contracts/afterlife_vault/contract.py:83
+    // vault.hospital_approved = arc4.Bool(True)
+    intc_1 // 1
+    // smart_contracts/afterlife_vault/contract.py:83-84
+    // vault.hospital_approved = arc4.Bool(True)
+    // self.vaults[owner] = vault.copy() # <-- ADDED .COPY() FOR SAFE ASSIGNMENT
+    setbit
+    intc_0 // 0
+    swap
+    box_replace
+    // smart_contracts/afterlife_vault/contract.py:76
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// smart_contracts.afterlife_vault.contract.AfterlifeVault.approve_death[routing]() -> void:
+approve_death:
+    // smart_contracts/afterlife_vault/contract.py:86
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    // smart_contracts/afterlife_vault/contract.py:89
+    // vault = self.vaults[owner].copy()
+    bytec_1 // "vaults"
+    swap
+    concat
+    dupn 2
+    box_get
+    swap
+    cover 2
+    assert // check self.vaults entry exists
+    // smart_contracts/afterlife_vault/contract.py:89-90
+    // vault = self.vaults[owner].copy()
+    // assert vault.is_active.native, "Vault is not active"
+    dup
+    intc_0 // 0
+    intc_1 // 1
+    box_extract
+    dup
+    intc_0 // 0
+    getbit
+    // smart_contracts/afterlife_vault/contract.py:90
+    // assert vault.is_active.native, "Vault is not active"
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    assert // Vault is not active
+    // smart_contracts/afterlife_vault/contract.py:91
+    // assert vault.hospital_approved.native, "Protocol not initiated by hospital"
+    intc_3 // 2
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    assert // Protocol not initiated by hospital
+    // smart_contracts/afterlife_vault/contract.py:93-94
+    // # Check caller identity
+    // is_gov = Txn.sender == vault.designated_gov.native
+    txn Sender
+    dig 1
+    pushint 33
+    intc_2 // 32
+    box_extract
+    ==
+    // smart_contracts/afterlife_vault/contract.py:95
+    // is_verifier = Txn.sender == vault.designated_verifier.native
+    txn Sender
+    uncover 2
+    pushint 65
+    intc_2 // 32
+    box_extract
+    ==
+    dup
+    cover 2
+    // smart_contracts/afterlife_vault/contract.py:96
+    // assert is_gov or is_verifier, "Unauthorized: Not Gov or Verifier"
+    dig 1
+    ||
+    assert // Unauthorized: Not Gov or Verifier
+    // smart_contracts/afterlife_vault/contract.py:98
+    // if is_gov:
+    bz approve_death_after_if_else@3
+    // smart_contracts/afterlife_vault/contract.py:99
+    // vault.gov_approved = arc4.Bool(True)
+    dig 1
+    pushint 3
+    intc_1 // 1
+    setbit
+    bury 2
+
+approve_death_after_if_else@3:
+    // smart_contracts/afterlife_vault/contract.py:100
+    // if is_verifier:
+    dup
+    bz approve_death_after_if_else@5
+    // smart_contracts/afterlife_vault/contract.py:101
+    // vault.verifier_approved = arc4.Bool(True)
+    dig 1
+    pushint 4
+    intc_1 // 1
+    setbit
+    bury 2
+
+approve_death_after_if_else@5:
+    // smart_contracts/afterlife_vault/contract.py:103-104
+    // # If 3/3 consensus reached, unlock the vault
+    // if vault.hospital_approved.native and vault.gov_approved.native and vault.verifier_approved.native:
+    dig 1
+    intc_3 // 2
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    bz approve_death_after_if_else@9
+    dig 1
+    pushint 3
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    bz approve_death_after_if_else@9
+    dig 1
+    pushint 4
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    bz approve_death_after_if_else@9
+    // smart_contracts/afterlife_vault/contract.py:105
+    // vault.is_unlocked = arc4.Bool(True)
+    dig 1
+    intc_1 // 1
+    dup
+    setbit
+    bury 2
+
+approve_death_after_if_else@9:
+    // smart_contracts/afterlife_vault/contract.py:107
+    // self.vaults[owner] = vault.copy() # <-- ADDED .COPY()
+    dig 2
+    dup
+    box_del
+    pop
+    dig 2
+    box_put
+    // smart_contracts/afterlife_vault/contract.py:86
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// smart_contracts.afterlife_vault.contract.AfterlifeVault.cancel_death_protocol[routing]() -> void:
+cancel_death_protocol:
+    // smart_contracts/afterlife_vault/contract.py:113
+    // vault = self.vaults[owner].copy()
+    bytec_1 // "vaults"
+    // smart_contracts/afterlife_vault/contract.py:112
+    // owner = Txn.sender
+    txn Sender
+    // smart_contracts/afterlife_vault/contract.py:113
+    // vault = self.vaults[owner].copy()
+    concat
+    dup
+    box_get
+    assert // check self.vaults entry exists
+    // smart_contracts/afterlife_vault/contract.py:115
+    // assert vault.is_active.native, "Vault is not active"
+    dig 1
+    intc_0 // 0
+    intc_1 // 1
+    box_extract
+    dup
+    intc_0 // 0
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    assert // Vault is not active
+    // smart_contracts/afterlife_vault/contract.py:116
+    // assert not vault.is_unlocked.native, "Vault already permanently unlocked"
+    intc_1 // 1
+    getbit
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    !
+    assert // Vault already permanently unlocked
+    // smart_contracts/afterlife_vault/contract.py:118-119
+    // # Reset the approvals
+    // vault.hospital_approved = arc4.Bool(False)
+    intc_3 // 2
+    intc_0 // 0
+    setbit
+    // smart_contracts/afterlife_vault/contract.py:120
+    // vault.gov_approved = arc4.Bool(False)
+    pushint 3
+    // smart_contracts/afterlife_vault/contract.py:118-119
+    // # Reset the approvals
+    // vault.hospital_approved = arc4.Bool(False)
+    intc_0 // 0
+    // smart_contracts/afterlife_vault/contract.py:120
+    // vault.gov_approved = arc4.Bool(False)
+    setbit
+    // smart_contracts/afterlife_vault/contract.py:121
+    // vault.verifier_approved = arc4.Bool(False)
+    pushint 4
+    // smart_contracts/afterlife_vault/contract.py:118-119
+    // # Reset the approvals
+    // vault.hospital_approved = arc4.Bool(False)
+    intc_0 // 0
+    // smart_contracts/afterlife_vault/contract.py:121
+    // vault.verifier_approved = arc4.Bool(False)
+    setbit
+    // smart_contracts/afterlife_vault/contract.py:123
+    // self.vaults[owner] = vault.copy() # <-- ADDED .COPY()
+    dig 1
+    box_del
+    pop
+    box_put
+    // smart_contracts/afterlife_vault/contract.py:109
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// smart_contracts.afterlife_vault.contract.AfterlifeVault.get_beneficiaries[routing]() -> void:
+get_beneficiaries:
+    // smart_contracts/afterlife_vault/contract.py:125
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    // smart_contracts/afterlife_vault/contract.py:128
+    // vault = self.vaults[owner].copy() # <-- ADDED .COPY() TO READ VALUE
+    bytec_1 // "vaults"
+    swap
+    concat
+    box_get
+    assert // check self.vaults entry exists
+    // smart_contracts/afterlife_vault/contract.py:129
+    // return vault.beneficiaries
+    dup
+    pushint 97
+    extract_uint16
+    dig 1
+    len
+    substring3
+    // smart_contracts/afterlife_vault/contract.py:125
+    // @arc4.abimethod
+    bytec_2 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_1 // 1
+    return
+
+
+// smart_contracts.afterlife_vault.contract.AfterlifeVault.is_vault_unlocked[routing]() -> void:
+is_vault_unlocked:
+    // smart_contracts/afterlife_vault/contract.py:131
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    // smart_contracts/afterlife_vault/contract.py:134
+    // vault = self.vaults[owner].copy() # <-- ADDED .COPY() TO READ VALUE
+    bytec_1 // "vaults"
+    swap
+    concat
+    // smart_contracts/afterlife_vault/contract.py:134-135
+    // vault = self.vaults[owner].copy() # <-- ADDED .COPY() TO READ VALUE
+    // return vault.is_unlocked.native
+    intc_0 // 0
+    intc_1 // 1
+    box_extract
+    intc_1 // 1
+    getbit
+    // smart_contracts/afterlife_vault/contract.py:135
+    // return vault.is_unlocked.native
+    bytec_0 // 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    // smart_contracts/afterlife_vault/contract.py:131
+    // @arc4.abimethod
+    bytec_2 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_1 // 1
+    return

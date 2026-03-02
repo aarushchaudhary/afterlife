@@ -1,80 +1,42 @@
 // frontend/lib/constants.ts
-export const AFTERLIFE_CONTRACT_ADDRESS = "0x51fC81A0ffF7275D5f0Bc5B0B96A159725825CB7";
+import algosdk from 'algosdk';
+import abiJson from './AfterlifeVault.arc56.json';
 
-export const AFTERLIFE_ABI = [
-    {
-        "inputs": [
-            { "internalType": "address[]", "name": "_heirWallets", "type": "address[]" },
-            { "internalType": "uint256[]", "name": "_percentages", "type": "uint256[]" },
-            { "internalType": "address", "name": "_hospitalAddress", "type": "address" },
-            { "internalType": "address", "name": "_govAddress", "type": "address" },
-            { "internalType": "address", "name": "_verifierAddress", "type": "address" }
-        ],
-        "name": "createVault",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{ "internalType": "address", "name": "_owner", "type": "address" }],
-        "name": "initiateDeath",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{ "internalType": "address", "name": "_owner", "type": "address" }],
-        "name": "approveDeath",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{ "internalType": "address", "name": "_owner", "type": "address" }],
-        "name": "isClaimable",
-        "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "cancelDeathProtocol",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{ "internalType": "address", "name": "_owner", "type": "address" }],
-        "name": "getBeneficiaries",
-        "outputs": [
-            {
-                "internalType": "struct AfterlifeVault.BeneficiaryTarget[]",
-                "name": "",
-                "type": "tuple[]",
-                "components": [
-                    { "internalType": "address", "name": "wallet", "type": "address" },
-                    { "internalType": "uint256", "name": "percentage", "type": "uint256" }
-                ]
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
-        "name": "vaults",
-        "outputs": [
-            { "internalType": "address", "name": "owner", "type": "address" },
-            { "internalType": "address", "name": "hospitalAddress", "type": "address" },
-            { "internalType": "address", "name": "govAddress", "type": "address" },
-            { "internalType": "address", "name": "verifierAddress", "type": "address" },
-            { "internalType": "uint256", "name": "initiationTime", "type": "uint256" },
-            { "internalType": "bool", "name": "hospitalApproved", "type": "bool" },
-            { "internalType": "bool", "name": "govApproved", "type": "bool" },
-            { "internalType": "bool", "name": "verifierApproved", "type": "bool" },
-            { "internalType": "bool", "name": "isUnlocked", "type": "bool" }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    }
-] as const;
+export const ALGORAND_APP_ID = 1002;
+
+export const ALGORAND_NODE_URL = 'http://localhost';
+export const ALGORAND_NODE_PORT = 4001;
+export const ALGORAND_NODE_TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+/** Shared Algod client for direct reads (box lookups, etc.) */
+export const algodClient = new algosdk.Algodv2(
+    ALGORAND_NODE_TOKEN,
+    ALGORAND_NODE_URL,
+    ALGORAND_NODE_PORT,
+);
+
+/** Build an ABIContract from the ARC56 JSON (for use with AtomicTransactionComposer) */
+export function getABIContract(): algosdk.ABIContract {
+    return new algosdk.ABIContract({
+        name: abiJson.name,
+        methods: abiJson.methods.map((m) => ({
+            name: m.name,
+            args: m.args.map((a) => ({ type: a.type, name: a.name })),
+            returns: { type: m.returns.type },
+        })),
+    });
+}
+
+/**
+ * Encode the box key used by the contract's `vaults` BoxMap.
+ * The prefix is "vaults" (decoded from the base64 in the ABI: "dmF1bHRz")
+ * followed by the 32-byte public key of the owner address.
+ */
+export function encodeVaultBoxKey(ownerAddress: string): Uint8Array {
+    const prefix = new TextEncoder().encode('vaults');
+    const addrBytes = algosdk.decodeAddress(ownerAddress).publicKey;
+    const key = new Uint8Array(prefix.length + addrBytes.length);
+    key.set(prefix);
+    key.set(addrBytes, prefix.length);
+    return key;
+}

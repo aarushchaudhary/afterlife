@@ -1,34 +1,30 @@
 "use client";
 
 import { useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useWallet } from '@txnlab/use-wallet-react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 export default function RoleRedirector() {
-    // Wagmi hook to get the connected wallet address
-    const { address, isConnected } = useAccount();
+    const { activeAddress } = useWallet();
     const router = useRouter();
 
     useEffect(() => {
         async function routeUser() {
-            // Only run if the wallet is actually connected
-            if (isConnected && address) {
-
-                // 1. Check the wallet against your Supabase 'roles' table
+            if (activeAddress) {
+                // Check the wallet against your Supabase 'roles' table
                 const { data, error } = await supabase
                     .from('roles')
                     .select('role')
-                    .eq('wallet_address', address.toLowerCase())
+                    .eq('wallet_address', activeAddress.toLowerCase())
                     .single();
 
-                // 2. If they aren't in the table, they are a normal citizen
                 if (error || !data) {
                     router.push('/user');
                     return;
                 }
 
-                // 3. Teleport them to their authorized portal
+                // Teleport them to their authorized portal
                 switch (data.role) {
                     case 'hospital':
                         router.push('/hospital');
@@ -46,8 +42,7 @@ export default function RoleRedirector() {
         }
 
         routeUser();
-    }, [isConnected, address, router]);
+    }, [activeAddress, router]);
 
-    // This component renders nothing visually. It just runs the logic.
     return null;
 }

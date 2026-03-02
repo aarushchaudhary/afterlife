@@ -3,3 +3,4 @@ uvicorn
 web3
 python-dotenv
 supabase
+py-algorand-sdk

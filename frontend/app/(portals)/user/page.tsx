@@ -1,16 +1,85 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useWriteContract, useReadContract, useAccount } from 'wagmi';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { parseGwei } from 'viem';
-import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
+import { useState, useEffect, useCallback } from 'react';
+import { useWallet } from '@txnlab/use-wallet-react';
+import algosdk from 'algosdk';
+import { ALGORAND_APP_ID, algodClient, getABIContract, encodeVaultBoxKey } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { User, Shield, Database, FileText, AlertOctagon, Activity, ShieldAlert, Scale, Plus, Trash2 } from 'lucide-react';
 import CountdownClock from '@/components/CountdownClock';
 
+// ---------- helpers to decode box data ----------
+interface VaultState {
+    isActive: boolean;
+    isUnlocked: boolean;
+    hospitalApproved: boolean;
+    govApproved: boolean;
+    verifierApproved: boolean;
+}
+
+function decodeBoolByte(byte: number): { b0: boolean; b1: boolean; b2: boolean; b3: boolean; b4: boolean } {
+    // The first ARC4 byte packs 5 booleans: is_active(bit0), is_unlocked(bit1), hospital(bit2), gov(bit3), verifier(bit4)
+    return {
+        b0: !!(byte & 0x80),
+        b1: !!(byte & 0x40),
+        b2: !!(byte & 0x20),
+        b3: !!(byte & 0x10),
+        b4: !!(byte & 0x08),
+    };
+}
+
+function decodeVaultBox(data: Uint8Array): VaultState {
+    const flags = decodeBoolByte(data[0]);
+    return {
+        isActive: flags.b0,
+        isUnlocked: flags.b1,
+        hospitalApproved: flags.b2,
+        govApproved: flags.b3,
+        verifierApproved: flags.b4,
+    };
+}
+
+// ---------- Wallet Connect Button ----------
+function WalletConnectButton() {
+    const { wallets, activeAddress } = useWallet();
+
+    const handleConnect = async () => {
+        if (wallets.length > 0) {
+            await wallets[0].connect();
+        }
+    };
+
+    const handleDisconnect = async () => {
+        if (wallets.length > 0) {
+            await wallets[0].disconnect();
+        }
+    };
+
+    if (activeAddress) {
+        return (
+            <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-slate-400 bg-black/40 px-3 py-2 rounded-xl border border-white/10 truncate max-w-[180px]">
+                    {activeAddress.slice(0, 4)}...{activeAddress.slice(-4)}
+                </span>
+                <button onClick={handleDisconnect} className="px-4 py-2 text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl border border-red-500/30 transition-all">
+                    Disconnect
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <button onClick={handleConnect} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+            Connect Pera Wallet
+        </button>
+    );
+}
+
+// ---------- Main Page ----------
 export default function UserPortal() {
-    const { address, isConnected } = useAccount();
+    const { activeAddress, transactionSigner } = useWallet();
+    const isConnected = !!activeAddress;
+
     const [heirs, setHeirs] = useState([{ wallet: '', percentage: 100 }]);
     const [hospital, setHospital] = useState('');
     const [gov, setGov] = useState('');
@@ -19,7 +88,11 @@ export default function UserPortal() {
     const [file, setFile] = useState<File | null>(null);
     const [mounted, setMounted] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    const { writeContractAsync, isPending } = useWriteContract();
+    const [isPending, setIsPending] = useState(false);
+
+    // Vault state read from box storage
+    const [vaultState, setVaultState] = useState<VaultState | null>(null);
+    const [hasVault, setHasVault] = useState(false);
 
     useEffect(() => setMounted(true), []);
 
@@ -35,50 +108,73 @@ export default function UserPortal() {
         }
         setHeirs(updated);
     };
-
     const totalPercentage = heirs.reduce((sum, h) => sum + Number(h.percentage), 0);
 
-    // 1. Read the user's own vault status
-    const { data: vault, refetch: refetchVault } = useReadContract({
-        address: AFTERLIFE_CONTRACT_ADDRESS,
-        abi: AFTERLIFE_ABI,
-        functionName: 'vaults',
-        args: [address as `0x${string}`],
-        query: { enabled: !!address }
-    });
-
-    const isHospitalInitiated = vault && (vault as any)[5] === true;
-    const hasVault = vault && (vault as any)[0] !== '0x0000000000000000000000000000000000000000';
-
-    const handleCancelProtocol = async () => {
+    // Read vault from box storage
+    const fetchVault = useCallback(async () => {
+        if (!activeAddress) return;
         try {
-            const tx = await writeContractAsync({
-                address: AFTERLIFE_CONTRACT_ADDRESS,
-                abi: AFTERLIFE_ABI,
-                functionName: 'cancelDeathProtocol',
-                maxPriorityFeePerGas: parseGwei('30'),
-                maxFeePerGas: parseGwei('40'),
+            const boxKey = encodeVaultBoxKey(activeAddress);
+            const boxResponse = await algodClient.getApplicationBoxByName(ALGORAND_APP_ID, boxKey).do();
+            const decoded = decodeVaultBox(boxResponse.value);
+            setVaultState(decoded);
+            setHasVault(decoded.isActive);
+        } catch {
+            // Box not found → user has no vault
+            setVaultState(null);
+            setHasVault(false);
+        }
+    }, [activeAddress]);
+
+    useEffect(() => {
+        if (activeAddress) fetchVault();
+    }, [activeAddress, fetchVault]);
+
+    // Cancel death protocol
+    const handleCancelProtocol = async () => {
+        if (!activeAddress) return;
+        try {
+            setIsPending(true);
+            const contract = getABIContract();
+            const method = contract.getMethodByName('cancel_death_protocol');
+            const suggestedParams = await algodClient.getTransactionParams().do();
+
+            const boxKey = encodeVaultBoxKey(activeAddress);
+
+            const atc = new algosdk.AtomicTransactionComposer();
+            atc.addMethodCall({
+                appID: ALGORAND_APP_ID,
+                method,
+                methodArgs: [],
+                sender: activeAddress,
+                signer: transactionSigner,
+                suggestedParams,
+                boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
             });
-            if (tx) {
-                alert("🛑 Emergency Protocol Successfully Cancelled.");
-                refetchVault();
-            }
+
+            await atc.execute(algodClient, 4);
+            alert("🛑 Emergency Protocol Successfully Cancelled.");
+            fetchVault();
         } catch (err: any) {
             alert(`Cancellation Failed: ${err.message}`);
+        } finally {
+            setIsPending(false);
         }
     };
 
+    // Create vault
     const handleRegister = async () => {
         if (!isConnected || !hospital || !gov || !verifier || !secretNote) return;
         if (totalPercentage !== 100) return;
         if (heirs.some(h => !h.wallet)) return;
+
         try {
             setIsUploading(true);
             let finalFileUrl = null;
 
-            if (file && address) {
+            if (file && activeAddress) {
                 const fileExt = file.name.split('.').pop();
-                const filePath = `${address.toLowerCase()}/legacy_document.${fileExt}`;
+                const filePath = `${activeAddress.toLowerCase()}/legacy_document.${fileExt}`;
                 const { error: uploadError } = await supabase.storage.from('vault_files').upload(filePath, file, { upsert: true });
                 if (uploadError) throw uploadError;
                 const { data: urlData } = supabase.storage.from('vault_files').getPublicUrl(filePath);
@@ -86,28 +182,71 @@ export default function UserPortal() {
             }
 
             const { error: dbError } = await supabase.from('vault_secrets').upsert([{
-                owner_wallet: address?.toLowerCase(),
+                owner_wallet: activeAddress?.toLowerCase(),
                 beneficiary_wallets: heirs.map(h => h.wallet.toLowerCase()),
                 encrypted_note: secretNote, file_url: finalFileUrl, status: 'active'
             }]);
             if (dbError) throw dbError;
 
             setIsUploading(false);
+            setIsPending(true);
 
-            const tx = await writeContractAsync({
-                address: AFTERLIFE_CONTRACT_ADDRESS, abi: AFTERLIFE_ABI, functionName: 'createVault',
-                args: [
-                    heirs.map(h => h.wallet as `0x${string}`),
-                    heirs.map(h => BigInt(h.percentage)),
-                    hospital as `0x${string}`, gov as `0x${string}`, verifier as `0x${string}`
-                ],
-                maxPriorityFeePerGas: parseGwei('30'), maxFeePerGas: parseGwei('40'),
+            const contract = getABIContract();
+            const method = contract.getMethodByName('create_vault');
+            const suggestedParams = await algodClient.getTransactionParams().do();
+
+            // Encode ABI args: address[] and uint64[]
+            const heirAddresses = heirs.map(h => algosdk.decodeAddress(h.wallet).publicKey);
+            const heirPercentages = heirs.map(h => BigInt(h.percentage));
+
+            const hospitalAddr = algosdk.decodeAddress(hospital).publicKey;
+            const govAddr = algosdk.decodeAddress(gov).publicKey;
+            const verifierAddr = algosdk.decodeAddress(verifier).publicKey;
+
+            // Box reference for the sender's vault
+            const boxKey = encodeVaultBoxKey(activeAddress!);
+
+            // Estimate box size for MBR: 1 byte flags + 3×32 addr + 2 bytes header offset + (numHeirs × 40 bytes each) + 2 bytes length prefix
+            const estBoxSize = 1 + 96 + 2 + (heirs.length * 40) + 2;
+            const mbrNeeded = 2500 + (400 * (boxKey.length + estBoxSize));
+
+            // Fund MBR via a payment transaction before the app call
+            const payTxn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+                sender: activeAddress!,
+                receiver: algosdk.getApplicationAddress(ALGORAND_APP_ID),
+                amount: BigInt(mbrNeeded),
+                suggestedParams,
             });
-            if (tx) { alert("✅ Vault Secured Successfully!"); refetchVault(); }
-        } catch (err: any) { setIsUploading(false); alert(`Error: ${err.message}`); }
+
+            const atc = new algosdk.AtomicTransactionComposer();
+
+            // Add MBR payment first
+            atc.addTransaction({ txn: payTxn, signer: transactionSigner });
+
+            atc.addMethodCall({
+                appID: ALGORAND_APP_ID,
+                method,
+                methodArgs: [heirAddresses, heirPercentages, hospitalAddr, govAddr, verifierAddr],
+                sender: activeAddress!,
+                signer: transactionSigner,
+                suggestedParams,
+                boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
+            });
+
+            await atc.execute(algodClient, 4);
+            alert("✅ Vault Secured Successfully!");
+            fetchVault();
+        } catch (err: any) {
+            alert(`Error: ${err.message}`);
+        } finally {
+            setIsUploading(false);
+            setIsPending(false);
+        }
     };
 
     if (!mounted) return null;
+
+    const isHospitalInitiated = vaultState?.hospitalApproved === true;
 
     return (
         <div className="min-h-screen bg-slate-950 bg-[url('/bg-pattern.svg')] text-white py-12 px-6 relative overflow-hidden flex flex-col items-center">
@@ -120,11 +259,11 @@ export default function UserPortal() {
                         <h1 className="text-4xl font-bold text-slate-200 flex items-center gap-3"><User /> Citizen Vault</h1>
                         <p className="text-slate-400 mt-2 font-mono text-sm">Secure your digital inheritance.</p>
                     </div>
-                    <ConnectButton />
+                    <WalletConnectButton />
                 </header>
 
                 {!isConnected ? (
-                    <div className="p-6 bg-white/5 border border-white/10 rounded-xl text-center backdrop-blur-xl">Please connect your Owner wallet (Account 1).</div>
+                    <div className="p-6 bg-white/5 border border-white/10 rounded-xl text-center backdrop-blur-xl">Please connect your Owner wallet.</div>
                 ) : isHospitalInitiated ? (
                     /* THE EMERGENCY OVERRIDE UI */
                     <div className="bg-red-950/40 backdrop-blur-xl p-10 rounded-2xl border border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)] flex flex-col items-center text-center animate-in fade-in zoom-in duration-300">
@@ -136,7 +275,7 @@ export default function UserPortal() {
                             An authorized medical entity has reported a vital sign failure and initiated the 72-hour multi-sig countdown. If you are alive, you must cancel this process immediately.
                         </p>
                         <div className="mb-8 w-full max-w-md">
-                            <CountdownClock initiationTime={Number((vault as any)[4])} />
+                            <CountdownClock initiationTime={0} />
                         </div>
                         <button
                             onClick={handleCancelProtocol} disabled={isPending}
@@ -150,7 +289,7 @@ export default function UserPortal() {
                     <div className="p-10 bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-xl text-center shadow-2xl">
                         <Shield size={48} className="mx-auto text-green-400 mb-4 opacity-50" />
                         <h2 className="text-2xl font-bold text-slate-200 mb-2">Vault Secured</h2>
-                        <p className="text-slate-400 font-mono text-sm">Your digital legacy is actively protected on the Polygon blockchain.</p>
+                        <p className="text-slate-400 font-mono text-sm">Your digital legacy is actively protected on the Algorand blockchain.</p>
                     </div>
                 ) : (
                     /* THE REGISTRATION UI */
@@ -164,7 +303,7 @@ export default function UserPortal() {
                                 {heirs.map((heir, index) => (
                                     <div key={index} className="flex gap-3 items-center animate-in fade-in slide-in-from-bottom-2 duration-300">
                                         <input
-                                            placeholder="Heir Wallet (0x...)"
+                                            placeholder="Heir Wallet (Algorand Address)"
                                             value={heir.wallet}
                                             className="flex-[7] p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono"
                                             onChange={(e) => updateHeir(index, 'wallet', e.target.value)}
@@ -206,15 +345,15 @@ export default function UserPortal() {
                         </div>
                         <div>
                             <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Activity size={16} /> Designated Hospital Wallet</label>
-                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setHospital(e.target.value.trim())} />
+                            <input placeholder="Algorand Address..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setHospital(e.target.value.trim())} />
                         </div>
                         <div>
                             <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><ShieldAlert size={16} /> Designated Government Wallet</label>
-                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setGov(e.target.value.trim())} />
+                            <input placeholder="Algorand Address..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setGov(e.target.value.trim())} />
                         </div>
                         <div>
                             <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Scale size={16} /> Designated Verifier Wallet</label>
-                            <input placeholder="0x..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setVerifier(e.target.value.trim())} />
+                            <input placeholder="Algorand Address..." className="w-full p-4 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 outline-none focus:border-slate-400 transition-all font-mono" onChange={(e) => setVerifier(e.target.value.trim())} />
                         </div>
                         <div>
                             <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-wider flex items-center gap-2"><Database size={16} /> Secret Legacy Note</label>

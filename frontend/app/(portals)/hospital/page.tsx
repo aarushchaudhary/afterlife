@@ -1,66 +1,124 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useWriteContract, useReadContract, useAccount } from 'wagmi';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { parseGwei } from 'viem';
-import { AFTERLIFE_CONTRACT_ADDRESS, AFTERLIFE_ABI } from '@/lib/constants';
+import { useState, useEffect, useCallback } from 'react';
+import { useWallet } from '@txnlab/use-wallet-react';
+import algosdk from 'algosdk';
+import { ALGORAND_APP_ID, algodClient, getABIContract, encodeVaultBoxKey } from '@/lib/constants';
 import { supabase } from '@/lib/supabase';
 import { Search, Activity, RefreshCw } from 'lucide-react';
 import CountdownClock from '@/components/CountdownClock';
 
+// ---------- decode box ----------
+interface VaultFlags {
+    isActive: boolean;
+    isUnlocked: boolean;
+    hospitalApproved: boolean;
+    govApproved: boolean;
+    verifierApproved: boolean;
+}
+
+function decodeVaultFlags(data: Uint8Array): VaultFlags {
+    const b = data[0];
+    return {
+        isActive: !!(b & 0x80),
+        isUnlocked: !!(b & 0x40),
+        hospitalApproved: !!(b & 0x20),
+        govApproved: !!(b & 0x10),
+        verifierApproved: !!(b & 0x08),
+    };
+}
+
+// ---------- Wallet Connect Button ----------
+function WalletConnectButton() {
+    const { wallets, activeAddress } = useWallet();
+    if (activeAddress) {
+        return (
+            <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-slate-400 bg-black/40 px-3 py-2 rounded-xl border border-white/10 truncate max-w-[180px]">
+                    {activeAddress.slice(0, 4)}...{activeAddress.slice(-4)}
+                </span>
+                <button onClick={() => wallets[0]?.disconnect()} className="px-4 py-2 text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl border border-red-500/30 transition-all">Disconnect</button>
+            </div>
+        );
+    }
+    return (
+        <button onClick={() => wallets[0]?.connect()} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
+    );
+}
+
+// ---------- Main Page ----------
 export default function HospitalDashboard() {
-    const { isConnected } = useAccount();
+    const { activeAddress, transactionSigner } = useWallet();
+    const isConnected = !!activeAddress;
+
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedWallet, setSelectedWallet] = useState('');
     const [queue, setQueue] = useState<any[]>([]);
     const [mounted, setMounted] = useState(false);
-    const { writeContractAsync, isPending } = useWriteContract();
+    const [isPending, setIsPending] = useState(false);
+    const [vaultFlags, setVaultFlags] = useState<VaultFlags | null>(null);
 
     useEffect(() => { setMounted(true); fetchQueue(); }, []);
 
     const fetchQueue = async () => {
-        // Hospital sees "active" (living) patients to monitor
         const { data } = await supabase.from('verification_queue').select('*').eq('status', 'active');
         if (data) setQueue(data);
     };
 
-    const { data: vault, refetch: refetchBlockchain } = useReadContract({
-        address: AFTERLIFE_CONTRACT_ADDRESS,
-        abi: AFTERLIFE_ABI,
-        functionName: 'vaults',
-        args: [selectedWallet as `0x${string}`],
-        query: { enabled: selectedWallet.length === 42 }
-    });
+    // Read vault box for the selected wallet
+    const fetchVault = useCallback(async () => {
+        if (!selectedWallet) { setVaultFlags(null); return; }
+        try {
+            const boxKey = encodeVaultBoxKey(selectedWallet);
+            const boxResponse = await algodClient.getApplicationBoxByName(ALGORAND_APP_ID, boxKey).do();
+            setVaultFlags(decodeVaultFlags(boxResponse.value));
+        } catch {
+            setVaultFlags(null);
+        }
+    }, [selectedWallet]);
+
+    useEffect(() => { fetchVault(); }, [fetchVault]);
 
     const handleInitiate = async () => {
         if (!isConnected || !selectedWallet) return;
         try {
-            const tx = await writeContractAsync({
-                address: AFTERLIFE_CONTRACT_ADDRESS,
-                abi: AFTERLIFE_ABI,
-                functionName: 'initiateDeath',
-                args: [selectedWallet as `0x${string}`],
-                maxPriorityFeePerGas: parseGwei('30'),
-                maxFeePerGas: parseGwei('40'),
+            setIsPending(true);
+            const contract = getABIContract();
+            const method = contract.getMethodByName('initiate_death');
+            const suggestedParams = await algodClient.getTransactionParams().do();
+
+            const ownerPubKey = algosdk.decodeAddress(selectedWallet).publicKey;
+            const boxKey = encodeVaultBoxKey(selectedWallet);
+
+            const atc = new algosdk.AtomicTransactionComposer();
+            atc.addMethodCall({
+                appID: ALGORAND_APP_ID,
+                method,
+                methodArgs: [ownerPubKey],
+                sender: activeAddress!,
+                signer: transactionSigner,
+                suggestedParams,
+                boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
             });
-            if (tx) {
-                alert("🚨 Emergency Protocol Initiated. 72-Hour Clock Started.");
-                refetchBlockchain();
-                fetchQueue();
-            }
+
+            await atc.execute(algodClient, 4);
+            alert("🚨 Emergency Protocol Initiated. 72-Hour Clock Started.");
+            fetchVault();
+            fetchQueue();
         } catch (err: any) {
-            alert(`Transaction failed: ${err.shortMessage || err.message}`);
+            alert(`Transaction failed: ${err.message}`);
+        } finally {
+            setIsPending(false);
         }
     };
 
     if (!mounted) return null;
 
     const filteredQueue = queue.filter(item => item.owner_wallet.includes(searchQuery.toLowerCase()));
+    const hasVaultData = vaultFlags?.isActive === true;
 
     return (
         <div className="min-h-screen bg-slate-950 bg-[url('/bg-pattern.svg')] text-white flex flex-col relative overflow-hidden">
-            {/* Ambient Glowing Orb */}
             <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-red-900/20 blur-[150px] rounded-full pointer-events-none"></div>
 
             <div className="max-w-6xl w-full mx-auto py-12 px-6 z-10 relative flex flex-col h-screen animate-in fade-in zoom-in duration-300">
@@ -70,12 +128,12 @@ export default function HospitalDashboard() {
                             <h1 className="text-4xl font-bold text-red-500 flex items-center gap-3"><Activity /> Hospital Command Center</h1>
                             <p className="text-slate-400 font-mono mt-2">Monitor active citizens and initiate emergency protocols.</p>
                         </div>
-                        <ConnectButton />
+                        <WalletConnectButton />
                     </header>
 
                     {!isConnected ? (
                         <div className="p-4 bg-yellow-900/30 border border-yellow-700 text-yellow-500 rounded text-center">
-                            Please connect your official Hospital wallet (Account 1).
+                            Please connect your official Hospital wallet.
                         </div>
                     ) : (
                         <div className="flex gap-8 flex-1 overflow-hidden">
@@ -115,7 +173,7 @@ export default function HospitalDashboard() {
                                         <Activity size={48} className="mb-4 opacity-20" />
                                         <p>Select a citizen from the queue to review their vault.</p>
                                     </div>
-                                ) : vault && (vault as any)[0] !== '0x0000000000000000000000000000000000000000' ? (
+                                ) : hasVaultData ? (
                                     <div className="space-y-6 animate-in fade-in zoom-in duration-300">
                                         <h2 className="text-2xl font-bold text-slate-100 border-b border-white/10 pb-4">Vault Details</h2>
                                         <div className="p-6 bg-black/40 rounded-xl border border-white/10 space-y-3 font-mono text-sm backdrop-blur-md">
@@ -124,21 +182,20 @@ export default function HospitalDashboard() {
                                         <div className="p-6 bg-black/40 rounded-xl border border-white/10 backdrop-blur-md">
                                             <p className="text-slate-500 text-xs uppercase tracking-widest mb-4">Blockchain Status</p>
                                             <div className="flex gap-4">
-                                                <Badge label="Hospital" active={(vault as any)[5]} />
-                                                <Badge label="Government" active={(vault as any)[6]} />
-                                                <Badge label="Verifier" active={(vault as any)[7]} />
+                                                <Badge label="Hospital" active={vaultFlags!.hospitalApproved} />
+                                                <Badge label="Government" active={vaultFlags!.govApproved} />
+                                                <Badge label="Verifier" active={vaultFlags!.verifierApproved} />
                                             </div>
                                         </div>
-                                        {/* Conditionally render the Countdown Clock if Hospital has initiated */}
-                                        {(vault as any)[5] && !(vault as any)[8] && (
+                                        {vaultFlags!.hospitalApproved && !vaultFlags!.isUnlocked && (
                                             <div className="mt-6 animate-in fade-in zoom-in duration-500">
                                                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
                                                     Emergency Override Window
                                                 </p>
-                                                <CountdownClock initiationTime={Number((vault as any)[4])} />
+                                                <CountdownClock initiationTime={0} />
                                             </div>
                                         )}
-                                        {!(vault as any)[5] && (
+                                        {!vaultFlags!.hospitalApproved && (
                                             <button
                                                 onClick={handleInitiate} disabled={isPending}
                                                 className="w-full py-4 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 font-bold rounded transition cursor-pointer flex justify-center items-center gap-2"
