@@ -1,0 +1,44 @@
+INFO:     Will watch for changes in these directories: ['/home/chaudhary/afterlife/oracle']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [33918] using StatReload
+INFO:     Started server process [33920]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+✅ Successfully connected to Algorand LocalNet Indexer!
+Starting Algorand Indexer Listener on App ID 756414934...
+INFO:     127.0.0.1:45456 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:45456 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:45456 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45456 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45456 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34528 - "GET /health HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [33920]
+INFO:     Started server process [39186]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [39186]
+INFO:     Started server process [39362]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+✅ Successfully connected to Algorand LocalNet Indexer!
+🚀 Starting Algorand Indexer Listener on App ID 756414934...
+   CREATE_VAULT selector: 5930d05f
+   INITIATE_DEATH selector: 468daa3e
+   APPROVE_DEATH selector: 29aa9829
+   CANCEL_DEATH selector: e54bd3f1
+📡 Polled 2 transaction(s) from round 0+
+   ⏭️  [Round 61035859] Skipping tx with no app args (e.g. app creation)
+   🔎 [Round 61037346] Selector: 5930d05f from VJCM6YQM...
+🔍 [Round 61037346] VaultCreated detected
+✅ DB: Vault added to queue for VJCM6YQMPMMJ53V7XPC7YPQGDGVSQV3XNYJ553XVJKTKDRUU2VZ523AQEQ
+INFO:     127.0.0.1:50628 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50628 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50628 - "GET /openapi.json HTTP/1.1" 200 OK

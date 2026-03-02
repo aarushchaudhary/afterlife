@@ -93,6 +93,7 @@ export default function UserPortal() {
     // Vault state read from box storage
     const [vaultState, setVaultState] = useState<VaultState | null>(null);
     const [hasVault, setHasVault] = useState(false);
+    const [initiatedAt, setInitiatedAt] = useState<number>(0);
 
     useEffect(() => setMounted(true), []);
 
@@ -129,6 +130,21 @@ export default function UserPortal() {
     useEffect(() => {
         if (activeAddress) fetchVault();
     }, [activeAddress, fetchVault]);
+
+    // Fetch initiated_at from Supabase for the countdown
+    useEffect(() => {
+        if (!activeAddress) { setInitiatedAt(0); return; }
+        (async () => {
+            try {
+                const { data } = await supabase.from('verification_queue').select('initiated_at').eq('owner_wallet', activeAddress).single();
+                if (data?.initiated_at) {
+                    setInitiatedAt(Math.floor(new Date(data.initiated_at).getTime() / 1000));
+                } else {
+                    setInitiatedAt(0);
+                }
+            } catch { setInitiatedAt(0); }
+        })();
+    }, [activeAddress, vaultState]);
 
     // Cancel death protocol
     const handleCancelProtocol = async () => {
@@ -275,7 +291,7 @@ export default function UserPortal() {
                             An authorized medical entity has reported a vital sign failure and initiated the 72-hour multi-sig countdown. If you are alive, you must cancel this process immediately.
                         </p>
                         <div className="mb-8 w-full max-w-md">
-                            <CountdownClock initiationTime={0} />
+                            <CountdownClock initiationTime={initiatedAt} />
                         </div>
                         <button
                             onClick={handleCancelProtocol} disabled={isPending}

@@ -38,7 +38,7 @@ function WalletConnectButton() {
         );
     }
     return (
-        <button onClick={() => wallets[0]?.connect()} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
+        <button onClick={async () => { try { await wallets[0]?.connect(); } catch { await wallets[0]?.disconnect(); await wallets[0]?.connect(); } }} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
     );
 }
 
@@ -56,6 +56,7 @@ export default function BeneficiaryPortal() {
     const [mounted, setMounted] = useState(false);
     const [vaultFlags, setVaultFlags] = useState<VaultFlags | null>(null);
     const [isBeneficiary, setIsBeneficiary] = useState(false);
+    const [initiatedAt, setInitiatedAt] = useState<number>(0);
 
     useEffect(() => setMounted(true), []);
 
@@ -86,6 +87,21 @@ export default function BeneficiaryPortal() {
 
     useEffect(() => { fetchVault(); }, [fetchVault]);
 
+    // Fetch initiated_at from Supabase for the countdown
+    useEffect(() => {
+        if (!searchAddress || searchAddress.length < 58) { setInitiatedAt(0); return; }
+        (async () => {
+            try {
+                const { data } = await supabase.from('verification_queue').select('initiated_at').eq('owner_wallet', searchAddress).single();
+                if (data?.initiated_at) {
+                    setInitiatedAt(Math.floor(new Date(data.initiated_at).getTime() / 1000));
+                } else {
+                    setInitiatedAt(0);
+                }
+            } catch { setInitiatedAt(0); }
+        })();
+    }, [searchAddress, vaultFlags]);
+
     // Check if current user is a beneficiary using ATC simulate
     const checkBeneficiary = useCallback(async () => {
         if (!activeAddress || !searchAddress || searchAddress.length < 58) { setIsBeneficiary(false); return; }
@@ -96,13 +112,17 @@ export default function BeneficiaryPortal() {
             const ownerPubKey = algosdk.decodeAddress(searchAddress).publicKey;
             const boxKey = encodeVaultBoxKey(searchAddress);
 
+            const dummySigner: algosdk.TransactionSigner = async (txnGroup, indexesToSign) => {
+                return indexesToSign.map(() => new Uint8Array(64));
+            };
+
             const atc = new algosdk.AtomicTransactionComposer();
             atc.addMethodCall({
                 appID: ALGORAND_APP_ID,
                 method,
                 methodArgs: [ownerPubKey],
                 sender: activeAddress,
-                signer: transactionSigner,
+                signer: dummySigner,
                 suggestedParams,
                 boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
             });
@@ -122,7 +142,7 @@ export default function BeneficiaryPortal() {
         } catch {
             setIsBeneficiary(false);
         }
-    }, [activeAddress, searchAddress, transactionSigner]);
+    }, [activeAddress, searchAddress]);
 
     useEffect(() => { checkBeneficiary(); }, [checkBeneficiary]);
 
@@ -218,7 +238,7 @@ export default function BeneficiaryPortal() {
                                 {/* Show countdown if initiated but not fully unlocked */}
                                 {vaultFlags!.hospitalApproved && !isUnlocked && (
                                     <div className="animate-in fade-in zoom-in duration-500">
-                                        <CountdownClock initiationTime={0} />
+                                        <CountdownClock initiationTime={initiatedAt} />
                                     </div>
                                 )}
 

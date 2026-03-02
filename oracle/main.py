@@ -9,6 +9,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # Algorand Imports
+import algosdk
 from algosdk.v2client import indexer
 from algosdk.abi import Method
 
@@ -20,9 +21,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Algorand LocalNet Config
-INDEXER_URL = os.getenv("INDEXER_URL", "http://localhost:8980")
+INDEXER_URL = os.getenv("INDEXER_URL", "https://testnet-idx.algonode.cloud")
 INDEXER_TOKEN = os.getenv("INDEXER_TOKEN", "")
-APP_ID = int(os.getenv("ALGORAND_APP_ID", 1002)) # Your deployed Vault App ID
+APP_ID = int(os.getenv("ALGORAND_APP_ID", 756414934)) # Your deployed Vault App ID
 
 # Initialize FastAPI
 app = FastAPI(title="Afterlife Oracle (Algorand)")
@@ -44,9 +45,9 @@ indexer_client = indexer.IndexerClient(INDEXER_TOKEN, INDEXER_URL)
 # --- ALGORAND ABI METHOD SELECTORS ---
 # We calculate the 4-byte hash of your Python smart contract methods
 # so the Oracle knows exactly which function was called in the transaction.
-CREATE_VAULT_SEL = Method.from_signature("create_vault(address[],uint64[],account,account,account)void").get_selector()
-INITIATE_DEATH_SEL = Method.from_signature("initiate_death(account)void").get_selector()
-APPROVE_DEATH_SEL = Method.from_signature("approve_death(account)void").get_selector()
+CREATE_VAULT_SEL = Method.from_signature("create_vault(address[],uint64[],address,address,address)void").get_selector()
+INITIATE_DEATH_SEL = Method.from_signature("initiate_death(address)void").get_selector()
+APPROVE_DEATH_SEL = Method.from_signature("approve_death(address)void").get_selector()
 CANCEL_DEATH_SEL = Method.from_signature("cancel_death_protocol()void").get_selector()
 
 # --- DATABASE HANDLERS ---
@@ -106,7 +107,11 @@ def handle_protocol_cancelled(owner: str):
 # --- BLOCKCHAIN LISTENER (ALGORAND INDEXER) ---
 
 async def listen_for_events():
-    print(f"Starting Algorand Indexer Listener on App ID {APP_ID}...")
+    print(f"🚀 Starting Algorand Indexer Listener on App ID {APP_ID}...")
+    print(f"   CREATE_VAULT selector: {CREATE_VAULT_SEL.hex()}")
+    print(f"   INITIATE_DEATH selector: {INITIATE_DEATH_SEL.hex()}")
+    print(f"   APPROVE_DEATH selector: {APPROVE_DEATH_SEL.hex()}")
+    print(f"   CANCEL_DEATH selector: {CANCEL_DEATH_SEL.hex()}")
     min_round = 0
 
     while True:
@@ -120,6 +125,9 @@ async def listen_for_events():
             
             transactions = response.get("transactions", [])
             
+            if transactions:
+                print(f"📡 Polled {len(transactions)} transaction(s) from round {min_round}+")
+            
             for txn in transactions:
                 # Update block tracker
                 if txn["confirmed-round"] >= min_round:
@@ -129,6 +137,7 @@ async def listen_for_events():
                 app_args = app_txn.get("application-args", [])
                 
                 if not app_args:
+                    print(f"   ⏭️  [Round {txn['confirmed-round']}] Skipping tx with no app args (e.g. app creation)")
                     continue
                     
                 # Decode the method selector from Base64
@@ -136,6 +145,7 @@ async def listen_for_events():
                 called_selector_bytes = base64.b64decode(called_selector_b64)
                 
                 sender = txn["sender"]
+                print(f"   🔎 [Round {txn['confirmed-round']}] Selector: {called_selector_bytes.hex()} from {sender[:8]}...")
                 
                 # 1. Check for VaultCreated
                 if called_selector_bytes == CREATE_VAULT_SEL:
@@ -145,24 +155,33 @@ async def listen_for_events():
                 # 2. Check for ProtocolInitiated
                 elif called_selector_bytes == INITIATE_DEATH_SEL:
                     print(f"🔍 [Round {txn['confirmed-round']}] ProtocolInitiated detected")
-                    accounts = app_txn.get("accounts", [])
-                    if accounts:
-                        handle_protocol_initiated(accounts[0]) # Target owner is passed in accounts array
+                    # With 'address' type, the owner public key is in app_args[1], not accounts[]
+                    if len(app_args) > 1:
+                        owner_pubkey = base64.b64decode(app_args[1])
+                        owner_addr = algosdk.encoding.encode_address(owner_pubkey)
+                        print(f"   -> Owner (from args): {owner_addr}")
+                        handle_protocol_initiated(owner_addr)
 
                 # 3. Check for AssetsUnlocked (Triggered by approve_death)
                 elif called_selector_bytes == APPROVE_DEATH_SEL:
                     print(f"🔍 [Round {txn['confirmed-round']}] AssetUnlock/Approval detected")
-                    accounts = app_txn.get("accounts", [])
-                    if accounts:
-                        handle_assets_unlocked(accounts[0])
+                    # With 'address' type, the owner public key is in app_args[1], not accounts[]
+                    if len(app_args) > 1:
+                        owner_pubkey = base64.b64decode(app_args[1])
+                        owner_addr = algosdk.encoding.encode_address(owner_pubkey)
+                        print(f"   -> Owner (from args): {owner_addr}")
+                        handle_assets_unlocked(owner_addr)
 
                 # 4. Check for ProtocolCancelled
                 elif called_selector_bytes == CANCEL_DEATH_SEL:
                     print(f"🔍 [Round {txn['confirmed-round']}] ProtocolCancelled detected")
                     handle_protocol_cancelled(sender)
+                
+                else:
+                    print(f"   ❓ [Round {txn['confirmed-round']}] Unknown selector: {called_selector_bytes.hex()}")
 
         except Exception as e:
-            print(f"Listener error: {e}")
+            print(f"❌ Listener error: {e}")
             
         # Algorand block time is ~2.8s, poll every 3 seconds
         await asyncio.sleep(3)

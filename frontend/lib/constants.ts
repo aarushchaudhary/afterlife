@@ -2,11 +2,11 @@
 import algosdk from 'algosdk';
 import abiJson from './AfterlifeVault.arc56.json';
 
-export const ALGORAND_APP_ID = 1002;
+export const ALGORAND_APP_ID = 756414934;
 
-export const ALGORAND_NODE_URL = 'http://localhost';
-export const ALGORAND_NODE_PORT = 4001;
-export const ALGORAND_NODE_TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+export const ALGORAND_NODE_URL = 'https://testnet-api.algonode.cloud';
+export const ALGORAND_NODE_PORT = 443;
+export const ALGORAND_NODE_TOKEN = '';
 
 /** Shared Algod client for direct reads (box lookups, etc.) */
 export const algodClient = new algosdk.Algodv2(

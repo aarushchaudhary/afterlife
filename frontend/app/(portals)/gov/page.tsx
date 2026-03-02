@@ -42,7 +42,7 @@ function WalletConnectButton() {
         );
     }
     return (
-        <button onClick={() => wallets[0]?.connect()} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
+        <button onClick={async () => { try { await wallets[0]?.connect(); } catch { await wallets[0]?.disconnect(); await wallets[0]?.connect(); } }} className="px-6 py-3 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">Connect Pera Wallet</button>
     );
 }
 
@@ -57,6 +57,7 @@ export default function GovernmentDashboard() {
     const [mounted, setMounted] = useState(false);
     const [isPending, setIsPending] = useState(false);
     const [vaultFlags, setVaultFlags] = useState<VaultFlags | null>(null);
+    const [initiatedAt, setInitiatedAt] = useState<number>(0);
 
     useEffect(() => { setMounted(true); fetchQueue(); }, []);
 
@@ -77,6 +78,16 @@ export default function GovernmentDashboard() {
     }, [selectedWallet]);
 
     useEffect(() => { fetchVault(); }, [fetchVault]);
+
+    useEffect(() => {
+        if (!selectedWallet) { setInitiatedAt(0); return; }
+        const item = queue.find(q => q.owner_wallet === selectedWallet);
+        if (item?.initiated_at) {
+            setInitiatedAt(Math.floor(new Date(item.initiated_at).getTime() / 1000));
+        } else {
+            setInitiatedAt(0);
+        }
+    }, [selectedWallet, queue]);
 
     const handleApprove = async () => {
         if (!isConnected || !selectedWallet) return;
@@ -186,7 +197,7 @@ export default function GovernmentDashboard() {
                                                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 flex items-center gap-2">
                                                     State Audit Time Remaining
                                                 </p>
-                                                <CountdownClock initiationTime={0} />
+                                                <CountdownClock initiationTime={initiatedAt} />
                                             </div>
                                         )}
                                         {!vaultFlags!.govApproved && vaultFlags!.hospitalApproved && (

@@ -1,4 +1,5 @@
 import logging
+import os
 
 import algokit_utils
 
@@ -10,11 +11,15 @@ def deploy() -> None:
         AfterlifeVaultFactory,
     )
 
-    # Create an AlgorandClient for the local network
-    algorand = algokit_utils.AlgorandClient.default_localnet()
+    # Create an AlgorandClient for testnet
+    algorand = algokit_utils.AlgorandClient.testnet()
 
-    # Get (or create) a deployer account on localnet
-    deployer = algorand.account.localnet_dispenser()
+    # Load deployer account from mnemonic env var
+    mnemonic = os.environ.get("DEPLOYER_MNEMONIC")
+    if not mnemonic:
+        raise Exception("DEPLOYER_MNEMONIC environment variable is not set")
+
+    deployer = algorand.account.from_mnemonic(mnemonic=mnemonic)
 
     # Create factory with deployer as default sender
     factory = AfterlifeVaultFactory(
