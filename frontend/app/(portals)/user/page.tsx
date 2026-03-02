@@ -96,12 +96,14 @@ export default function UserPortal() {
         if (activeAddress) fetchVault();
     }, [activeAddress, fetchVault]);
 
-    // Fetch initiated_at from Supabase for the countdown
+    // Fetch initiated_at from backend for the countdown
     useEffect(() => {
         if (!activeAddress) { setInitiatedAt(0); return; }
         (async () => {
             try {
-                const { data } = await supabase.from('verification_queue').select('initiated_at').eq('owner_wallet', activeAddress).single();
+                const res = await fetch(`/api/queue?owner_wallet=${activeAddress}`);
+                const json = await res.json();
+                const data = json.data?.[0];
                 if (data?.initiated_at) {
                     setInitiatedAt(Math.floor(new Date(data.initiated_at).getTime() / 1000));
                 } else {
@@ -143,31 +145,54 @@ export default function UserPortal() {
         }
     };
 
+
     // Create vault
     const handleRegister = async () => {
-        if (!isConnected || !hospital || !gov || !verifier || !secretNote) return;
+        if (!isConnected || !hospital || !gov || !verifier || !secretNote || !activeAddress) return;
         if (totalPercentage !== 100) return;
         if (heirs.some(h => !h.wallet)) return;
 
         try {
             setIsUploading(true);
-            let finalFileUrl = null;
+            let objectKey = null;
 
-            if (file && activeAddress) {
-                const fileExt = file.name.split('.').pop();
-                const filePath = `${activeAddress}/legacy_document.${fileExt}`;
-                const { error: uploadError } = await supabase.storage.from('vault_files').upload(filePath, file, { upsert: true });
-                if (uploadError) throw uploadError;
-                const { data: urlData } = supabase.storage.from('vault_files').getPublicUrl(filePath);
-                finalFileUrl = urlData.publicUrl;
+            if (file) {
+                // 1. Get S3 Upload URL
+                const s3Res = await fetch('/api/s3-upload', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        fileName: file.name,
+                        fileType: file.type,
+                        ownerWallet: activeAddress
+                    })
+                });
+                if (!s3Res.ok) throw new Error("Failed to get S3 upload URL");
+
+                const s3Data = await s3Res.json();
+                const uploadUrl = s3Data.uploadUrl;
+                objectKey = s3Data.objectKey;
+
+                // 2. Upload file directly to S3
+                const uploadRes = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type },
+                    body: file // In a real app, this should be encryptedFileBlob
+                });
+                if (!uploadRes.ok) throw new Error("Failed to upload file to S3");
             }
 
-            const { error: dbError } = await supabase.from('vault_secrets').upsert([{
-                owner_wallet: activeAddress,
-                beneficiary_wallets: heirs.map(h => h.wallet),
-                encrypted_note: secretNote, file_url: finalFileUrl, status: 'active'
-            }]);
-            if (dbError) throw dbError;
+            // 3. Save everything to RDS
+            const rdsRes = await fetch('/api/vault', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ownerWallet: activeAddress,
+                    beneficiaryWallets: heirs.map(h => h.wallet),
+                    encryptedNote: secretNote,
+                    s3ObjectKey: objectKey // Save the S3 path, not a Supabase URL
+                })
+            });
+
+            if (!rdsRes.ok) throw new Error("Failed to save vault to RDS");
 
             setIsUploading(false);
             setIsPending(true);
@@ -185,7 +210,7 @@ export default function UserPortal() {
             const verifierAddr = algosdk.decodeAddress(verifier).publicKey;
 
             // Box reference for the sender's vault
-            const boxKey = encodeVaultBoxKey(activeAddress!);
+            const boxKey = encodeVaultBoxKey(activeAddress);
 
             // Estimate box size for MBR: 1 byte flags + 3×32 addr + 2 bytes header offset + (numHeirs × 40 bytes each) + 2 bytes length prefix
             const estBoxSize = 1 + 96 + 2 + (heirs.length * 40) + 2;
@@ -193,7 +218,7 @@ export default function UserPortal() {
 
             // Fund MBR via a payment transaction before the app call
             const payTxn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-                sender: activeAddress!,
+                sender: activeAddress,
                 receiver: algosdk.getApplicationAddress(ALGORAND_APP_ID),
                 amount: BigInt(mbrNeeded),
                 suggestedParams,
@@ -208,14 +233,14 @@ export default function UserPortal() {
                 appID: ALGORAND_APP_ID,
                 method,
                 methodArgs: [heirAddresses, heirPercentages, hospitalAddr, govAddr, verifierAddr],
-                sender: activeAddress!,
+                sender: activeAddress,
                 signer: transactionSigner,
                 suggestedParams,
                 boxes: [{ appIndex: ALGORAND_APP_ID, name: boxKey }],
             });
 
             await atc.execute(algodClient, 4);
-            alert("✅ Vault Secured Successfully!");
+            alert("✅ Vault Secured Successfully in AWS and Algorand!");
             fetchVault();
         } catch (err: any) {
             alert(`Error: ${err.message}`);

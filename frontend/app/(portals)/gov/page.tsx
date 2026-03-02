@@ -46,8 +46,13 @@ export default function GovernmentDashboard() {
     useEffect(() => { setMounted(true); fetchQueue(); }, []);
 
     const fetchQueue = async () => {
-        const { data } = await supabase.from('verification_queue').select('*').eq('status', 'initiated');
-        if (data) setQueue(data);
+        try {
+            const res = await fetch('/api/queue?status=initiated');
+            const json = await res.json();
+            if (json.data) setQueue(json.data);
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const fetchVault = useCallback(async () => {

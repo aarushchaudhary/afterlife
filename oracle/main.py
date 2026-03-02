@@ -5,7 +5,7 @@ import base64
 from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
+import psycopg2
 from dotenv import load_dotenv
 
 # Algorand Imports
@@ -16,8 +16,7 @@ from algosdk.abi import Method, ABIType
 # Load environment variables
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Algorand LocalNet Config
 INDEXER_URL = os.getenv("INDEXER_URL", "https://testnet-idx.algonode.cloud")
@@ -35,7 +34,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+def get_db_connection():
+    """Helper function to get a database connection"""
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    return conn
+
 indexer_client = indexer.IndexerClient(INDEXER_TOKEN, INDEXER_URL)
 
 CREATE_VAULT_SEL = Method.from_signature("create_vault(address[],uint64[],address,address,address)void").get_selector()
@@ -45,7 +49,13 @@ CANCEL_DEATH_SEL = Method.from_signature("cancel_death_protocol()void").get_sele
 
 def handle_vault_created(owner: str):
     try:
-        supabase.table("verification_queue").upsert({"owner_wallet": owner, "status": "active"}).execute()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO verification_queue (owner_wallet, status) 
+                    VALUES (%s, 'active') 
+                    ON CONFLICT (owner_wallet) DO UPDATE SET status = 'active'
+                """, (owner,))
         print(f"✅ DB: Vault added to queue for {owner}")
     except Exception as e:
         print(f"❌ DB Error (VaultCreated): {e}")
@@ -53,7 +63,13 @@ def handle_vault_created(owner: str):
 def handle_protocol_initiated(owner: str):
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
-        supabase.table("verification_queue").update({"status": "initiated", "initiated_at": now_iso}).eq("owner_wallet", owner).execute()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE verification_queue 
+                    SET status = 'initiated', initiated_at = %s 
+                    WHERE owner_wallet = %s
+                """, (now_iso, owner))
         print(f"🚨 DB: Queue status updated to INITIATED for {owner}")
     except Exception as e:
         print(f"❌ DB Error (ProtocolInitiated): {e}")
@@ -82,17 +98,26 @@ def handle_approve_death(owner: str):
         is_unlocked = decoded_vault[1] 
 
         if is_unlocked:
-            # Update Queue
-            q_res = supabase.table("verification_queue").update({"status": "unlocked"}).eq("owner_wallet", owner).execute()
-            # Update Secrets
-            v_res = supabase.table("vault_secrets").update({"status": "unlocked"}).eq("owner_wallet", owner).execute()
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # Update Queue
+                    cursor.execute("""
+                        UPDATE verification_queue 
+                        SET status = 'unlocked' 
+                        WHERE owner_wallet = %s
+                    """, (owner,))
+                    
+                    # Update Secrets
+                    cursor.execute("""
+                        UPDATE vault_secrets 
+                        SET status = 'unlocked' 
+                        WHERE owner_wallet = %s
+                    """, (owner,))
+                    
+                    rows_updated = cursor.rowcount
             
-            # Diagnostic logs
-            print(f"Queue Update Response: {q_res.data}")
-            print(f"Secrets Update Response: {v_res.data}")
-            
-            if len(v_res.data) == 0:
-                print(f"⚠️ WARNING: Supabase updated 0 rows in vault_secrets! The user '{owner}' does not exist in the vault_secrets table.")
+            if rows_updated == 0:
+                print(f"⚠️ WARNING: AWS RDS updated 0 rows in vault_secrets! The user '{owner}' does not exist in the vault_secrets table.")
             else:
                 print(f"🔓 DB SUCCESS: 3/3 Consensus Reached! Vault FULLY UNLOCKED for {owner}")
         else:
@@ -103,7 +128,13 @@ def handle_approve_death(owner: str):
 
 def handle_protocol_cancelled(owner: str):
     try:
-        supabase.table("verification_queue").update({"status": "active"}).eq("owner_wallet", owner).execute()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE verification_queue 
+                    SET status = 'active' 
+                    WHERE owner_wallet = %s
+                """, (owner,))
         print(f"🛑 DB: Protocol CANCELLED by owner {owner}. Queue reset.")
     except Exception as e:
         print(f"❌ DB Error (ProtocolCancelled): {e}")
@@ -165,4 +196,4 @@ async def startup_event():
 
 @app.get("/health")
 def health_check():
-    return {"status": "Algorand Indexer is running, syncing blockchain to Supabase."}
+    return {"status": "Algorand Indexer is running, syncing blockchain to AWS RDS."}

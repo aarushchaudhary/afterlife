@@ -4,3 +4,4 @@ web3
 python-dotenv
 supabase
 py-algorand-sdk
+psycopg2-binary

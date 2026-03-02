@@ -46,8 +46,13 @@ export default function HospitalDashboard() {
     useEffect(() => { setMounted(true); fetchQueue(); }, []);
 
     const fetchQueue = async () => {
-        const { data } = await supabase.from('verification_queue').select('*').eq('status', 'active');
-        if (data) setQueue(data);
+        try {
+            const res = await fetch('/api/queue?status=active');
+            const json = await res.json();
+            if (json.data) setQueue(json.data);
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     // Read vault box for the selected wallet

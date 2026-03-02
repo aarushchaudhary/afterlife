@@ -109,7 +109,7 @@ export default function BeneficiaryPortal() {
         fetchVault();
     }, [fetchVault]);
 
-    // Fetch initiated_at from Supabase for the countdown
+    // Fetch initiated_at from backend for the countdown
     useEffect(() => {
         if (!searchAddress || searchAddress.length < 58) {
             setInitiatedAt(0);
@@ -117,7 +117,9 @@ export default function BeneficiaryPortal() {
         }
         (async () => {
             try {
-                const { data } = await supabase.from('verification_queue').select('initiated_at').eq('owner_wallet', searchAddress).single();
+                const res = await fetch(`/api/queue?owner_wallet=${searchAddress}`);
+                const json = await res.json();
+                const data = json.data?.[0];
                 if (data?.initiated_at) {
                     setInitiatedAt(Math.floor(new Date(data.initiated_at).getTime() / 1000));
                 } else {
@@ -141,17 +143,12 @@ export default function BeneficiaryPortal() {
         setDecrypting(true);
 
         try {
-            // Set the x-user-wallet header for RLS
-            (supabase as any).rest.headers.set('x-user-wallet', activeAddress);
+            const res = await fetch(`/api/secrets?owner_wallet=${searchAddress}&beneficiary_wallet=${activeAddress}`);
+            const json = await res.json();
 
-            const { data, error } = await supabase
-                .from('vault_secrets')
-                .select('encrypted_note, file_url')
-                .eq('owner_wallet', searchAddress)
-                .contains('beneficiary_wallets', [activeAddress])
-                .limit(1);
+            if (!res.ok) throw new Error(json.error || 'Failed to retrieve payload');
 
-            if (error) throw error;
+            const data = json.data;
 
             // Fake a 2-second cryptographic "decryption" delay for UX
             setTimeout(() => {
@@ -259,7 +256,23 @@ export default function BeneficiaryPortal() {
                                                 </p>
                                                 {fileUrl && (
                                                     <button
-                                                        onClick={() => window.open(fileUrl, '_blank')}
+                                                        onClick={async () => {
+                                                            try {
+                                                                const res = await fetch('/api/s3-download', {
+                                                                    method: 'POST',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({
+                                                                        objectKey: fileUrl,
+                                                                        callerWallet: activeAddress
+                                                                    })
+                                                                });
+                                                                const json = await res.json();
+                                                                if (!res.ok) throw new Error(json.error || 'Failed to get download link');
+                                                                window.open(json.downloadUrl, '_blank');
+                                                            } catch (err: any) {
+                                                                alert(err.message);
+                                                            }
+                                                        }}
                                                         className="mt-4 w-full py-4 bg-white/5 hover:bg-white/10 text-purple-300 font-bold rounded-xl transition border border-purple-500/30 flex justify-center items-center gap-2"
                                                     >
                                                         Download Attached Document
