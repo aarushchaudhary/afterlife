@@ -45,7 +45,17 @@ function WalletConnectButton() {
 
     const handleConnect = async () => {
         if (wallets.length > 0) {
-            await wallets[0].connect();
+            try {
+                await wallets[0].connect();
+            } catch (err) {
+                console.warn("Wallet connect error, retrying...", err);
+                try {
+                    await wallets[0].disconnect();
+                    await wallets[0].connect();
+                } catch (retryErr) {
+                    console.error("Wallet reconnect failed:", retryErr);
+                }
+            }
         }
     };
 

@@ -78,21 +78,31 @@ def handle_protocol_initiated(owner: str):
     except Exception as e:
         print(f"❌ DB Error (ProtocolInitiated): {e}")
 
-def handle_assets_unlocked(owner: str):
-    """Marks queue as unlocked AND unlocks the actual secret note."""
+def handle_approve_death(owner: str):
+    """Tracks the 2/3 and 3/3 approvals sequentially."""
     try:
-        # 1. Update the Queue dashboard status
-        supabase.table("verification_queue").update({
-            "status": "unlocked"
-        }).eq("owner_wallet", owner).execute()
+        # 1. Fetch the current status from Supabase
+        res = supabase.table("verification_queue").select("status").eq("owner_wallet", owner).execute()
+        if not res.data:
+            return
+            
+        current_status = res.data[0].get("status")
         
-        # 2. Unlock the actual encrypted note for the beneficiary
-        supabase.table("vault_secrets").update({
-            "status": "unlocked"
-        }).eq("owner_wallet", owner).execute()
-        print(f"🔓 DB: Vault successfully UNLOCKED for {owner}")
+        if current_status == "initiated":
+            # FIRST APPROVAL (Government)
+            supabase.table("verification_queue").update({
+                "status": "pending_verifier"
+            }).eq("owner_wallet", owner).execute()
+            print(f"⚖️ DB SUCCESS: 1st Approval logged for {owner}. Moving to Verifier Queue.")
+            
+        elif current_status == "pending_verifier":
+            # SECOND APPROVAL (Legal Verifier)
+            supabase.table("verification_queue").update({"status": "unlocked"}).eq("owner_wallet", owner).execute()
+            supabase.table("vault_secrets").update({"status": "unlocked"}).eq("owner_wallet", owner).execute()
+            print(f"🔓 DB SUCCESS: 2nd Approval logged! Vault FULLY UNLOCKED for {owner}")
+            
     except Exception as e:
-        print(f"❌ DB Error (AssetsUnlocked): {e}")
+        print(f"❌ DB ERROR (ApproveDeath): {e}")
 
 def handle_protocol_cancelled(owner: str):
     """Reverts status to 'active' so the Gov/Verifier queues drop the case."""
@@ -164,13 +174,11 @@ async def listen_for_events():
 
                 # 3. Check for AssetsUnlocked (Triggered by approve_death)
                 elif called_selector_bytes == APPROVE_DEATH_SEL:
-                    print(f"🔍 [Round {txn['confirmed-round']}] AssetUnlock/Approval detected")
-                    # With 'address' type, the owner public key is in app_args[1], not accounts[]
-                    if len(app_args) > 1:
-                        owner_pubkey = base64.b64decode(app_args[1])
-                        owner_addr = algosdk.encoding.encode_address(owner_pubkey)
-                        print(f"   -> Owner (from args): {owner_addr}")
-                        handle_assets_unlocked(owner_addr)
+                    print(f"   -> 🎯 MATCH: AssetUnlock/Approval!")
+                    accounts = app_txn.get("accounts", [])
+                    if accounts:
+                        # Change this line to call our new smart function:
+                        handle_approve_death(accounts[0])
 
                 # 4. Check for ProtocolCancelled
                 elif called_selector_bytes == CANCEL_DEATH_SEL:
